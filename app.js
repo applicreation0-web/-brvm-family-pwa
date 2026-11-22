@@ -19,7 +19,7 @@
   let store, record, db, calc, tab='dashboard', portfolioId='', busy=false, refreshing=false, plan=null, comparison=null, planInputs=null, importPreview=null;
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
-  let importRevision, mergedImport, importReadTicket=0;
+  let importRevision, mergedImport, importReadTicket=0, pendingBackup=null;
   let quoteOptions=null, checkpoint=null, restoreFocus=null, projectInputs={monthly:null,fee:.016,dividend:.03}, historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
   const findAccount=id=>db.accounts.find(x=>x.id===id);
@@ -70,7 +70,8 @@
     if(target) {target.hidden=false; target.textContent=err.message; target.scrollIntoView({block:'nearest'});}
     else notify(err.message,true);
   }
-  async function put(next,replace=false) {
+  async function put(next,replace=false,backupApproval=false) {
+    if(!backupApproval && V.backupDue(db)) throw Error('Sauvegarde mensuelle obligatoire : téléchargez et vérifiez le ZIP avant toute modification.');
     record=await store.commit(next,record.revision,replace);
     db=record.data;
     calc=F.calculate(db);
@@ -81,6 +82,34 @@
     const a=document.createElement('a');
     a.href=url; a.download=name; a.click();
     setTimeout(()=>URL.revokeObjectURL(url),3000);
+  }
+  async function exportMonthlyBackup() {
+    if(!db?.accounts.length) throw Error('Ajoutez ou importez d’abord un compte.');
+    const bundle=V.monthlyBundle(db);
+    const fingerprint=await V.sha256(bundle.bytes);
+    pendingBackup={fingerprint,month:bundle.month,revision:record.revision,bytes:bundle.bytes.length};
+    download(bundle.bytes,'BRVM_SAUVEGARDE_'+bundle.month+'.zip','application/zip');
+    modal('Sauvegarde mensuelle à vérifier',
+      '<p>Le ZIP contient le JSON complet et un JSON par compte actif. Conservez ce fichier hors du téléphone, dans un espace privé. Les JSON sont en clair.</p>'+
+      '<p><strong>Étape obligatoire :</strong> sélectionnez ci-dessous le ZIP que vous venez d’enregistrer. Le contenu et son empreinte seront contrôlés avant de débloquer les modifications.</p>'+
+      '<label class="field"><span>Vérifier le ZIP sauvegardé</span><input id="backup-verify" type="file" accept=".zip,application/zip"></label>'+
+      '<p class="quiet">La consultation et la récupération de données restent possibles même sans sauvegarde. L’application ne peut pas vérifier un stockage externe sans ce contrôle.</p>');
+  }
+  async function verifyMonthlyBackup(file) {
+    const proof=pendingBackup;
+    if(!proof || !file) throw Error('Relancez d’abord la sauvegarde mensuelle.');
+    if(file.size!==proof.bytes || file.size>128*1024*1024)
+      throw Error('La taille de la sauvegarde ne correspond pas.');
+    const digest=await V.sha256(await file.arrayBuffer());
+    if(digest!==proof.fingerprint) throw Error('Le fichier n’est pas identique au ZIP exporté.');
+    if(record.revision!==proof.revision || V.monthKey()!==proof.month)
+      throw Error('Les données ou le mois ont changé. Relancez la sauvegarde.');
+    const next=structuredClone(db);
+    next.settings.monthlyBackup={month:proof.month,verifiedAt:new Date().toISOString(),sha256:digest};
+    await put(next,true,true);
+    pendingBackup=null;
+    close();render();
+    notify('Sauvegarde du mois vérifiée. Les modifications sont à nouveau autorisées.');
   }
   function portfolioPicker() {
     return `<label class="picker"><span>Portefeuille</span>${select('portfolio',calc.portfolios.map(p=>[p.id,p.label+(p.archived?' · archivé':'')]),portfolioId,'id="portfolio"')}</label>`;
@@ -396,8 +425,8 @@
     `;
   }
   function dataView() {
-    return `<div class="split">${pane('Sauvegardes privées',`<p>Exportez une sauvegarde chiffrée pour la conserver ou la restaurer sur un autre appareil. Le navigateur ne synchronise pas les portefeuilles. ${store.protected?'Le coffre actif est chiffré sur cet appareil. Verrouillez-le avant de quitter le profil.':'Les données actives sont stockées en clair. Vous pouvez activer le coffre local.'}</p>
-      <div class="actions">${store.protected?btn('lock','Verrouiller le coffre'):btn('protect','Chiffrer les données actives')}${btn('encrypt','Exporter chiffré','','primary')}${btn('import','Importer mes données')}${btn('import','Restaurer une sauvegarde')}${btn('export-json','Exporter mon JSON')}${btn('reset','Effacer mes données locales')}${checkpoint?btn('rollback','Restaurer le point précédent'):''}</div>
+    return `<div class="split">${pane('Sauvegardes privées',`<p>Sauvegarde mensuelle obligatoire : un ZIP contenant le JSON complet et un fichier indépendant pour chaque compte. Le mois est validé après relecture du fichier exporté.</p><p>Exportez une sauvegarde chiffrée pour la conserver ou la restaurer sur un autre appareil. Le navigateur ne synchronise pas les portefeuilles. ${store.protected?'Le coffre actif est chiffré sur cet appareil. Verrouillez-le avant de quitter le profil.':'Les données actives sont stockées en clair. Vous pouvez activer le coffre local.'}</p>
+      <div class="actions">${btn('monthly-backup','Sauvegarde mensuelle JSON · '+(V.backupDue(db)?'À effectuer':'Vérifiée'),'','primary')}${store.protected?btn('lock','Verrouiller le coffre'):btn('protect','Chiffrer les données actives')}${btn('encrypt','Exporter chiffré','','primary')}${btn('import','Importer mes données')}${btn('import','Restaurer une sauvegarde')}${btn('export-json','Exporter mon JSON')}${btn('reset','Effacer mes données locales')}${checkpoint?btn('rollback','Restaurer le point précédent'):''}</div>
       <p class="quiet">Une importation de remplacement garde le jeu précédent dans un point de restauration local. Sauvegardez avant de désinstaller, de changer d’adresse ou d’effacer les données du navigateur.</p>
       <details><summary>Données d’une ancienne version</summary><p>BRVM V2 et certaines versions V3 utilisaient un stockage commun à cette adresse. Vérifiez le contenu avant de le reprendre.</p>${btn('legacy','Voir les données de l’ancienne version')}</details>`)}
       ${pane('Sources de marché',`<p>L’actualisation automatique exige un flux autorisé pour cette installation. Le téléchargement manuel du fournisseur et l’import local restent disponibles.</p>
@@ -429,7 +458,8 @@
     $('#page-title').textContent=pages[tab][0];
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
     $('#quote-date').textContent=last?'Dernière cote · '+showDate(last):'Aucun cours chargé';
-    $('#view').innerHTML={dashboard,accounts:accountsView,invest:investment,orders:ordersView,events:eventsView,
+    $('#view').innerHTML=(V.backupDue(db)?'<section class="pane" role="alert"><h2>Sauvegarde JSON mensuelle obligatoire</h2><p>La consultation reste disponible, mais les nouvelles opérations sont suspendues jusqu’à la vérification de la sauvegarde du mois.</p>'+btn('monthly-backup','Télécharger et vérifier le ZIP','','primary')+'</section>':'')+
+      {dashboard,accounts:accountsView,invest:investment,orders:ordersView,events:eventsView,
       history:historyView,settings:settingsView,data:dataView}[tab]();
   }
   function goTo(page) {
@@ -537,6 +567,7 @@
         case 'close': close(); break;
         case 'refresh': void refresh(); break;
         case 'import': $('#import').click();break;
+        case 'monthly-backup': await exportMonthlyBackup();break;
         case 'legacy':
           modal('Reprendre les données de l’ancienne version',form('legacy',
             '<p>Les anciennes versions partageaient leur stockage sur cette origine. Vérifiez que l’aperçu correspond à vos données avant de confirmer.</p>','Afficher l’aperçu'));
@@ -893,6 +924,10 @@
     if(el.matches('#account-filter')) {accountFilter=el.value;render();$('#account-filter')?.focus();}
     if(el.matches('#history-month')) {historyMonth=el.value;journalLimit=40;render();$('#history-month')?.focus();}
     if(el.closest('form[data-form=tx]') && ['type','accountId','toAccountId'].includes(el.name)) transactionFields(el.form);
+    if(el.id==='backup-verify') {
+      const file=el.files?.[0];el.value='';
+      if(file) void verifyMonthlyBackup(file).catch(showError);
+    }
     if(el.id==='import'||el.id==='quote-import') {
       const file=el.files?.[0];el.value='';
       if(file) void (el.id==='import'?chooseImport(file):chooseQuotes(file)).catch(showError);
@@ -959,7 +994,7 @@
     });
   }
   function scheduleRefresh() {
-    if(db?.settings.autoQuotes && !document.hidden && navigator.onLine && !busy && !$('#modal').open &&
+    if(db?.settings.autoQuotes && !V.backupDue(db) && !document.hidden && navigator.onLine && !busy && !$('#modal').open &&
       Date.now()-lastQuoteAttempt>=15*60*1000) void refresh(true);
   }
   document.addEventListener('visibilitychange',scheduleRefresh);
