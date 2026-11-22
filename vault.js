@@ -227,7 +227,14 @@
     // opening snapshots or configuration implicitly.
     const entities=['owners','portfolios','institutions','accounts','positions','transactions',
       'orders','plans','events','attachments','history'];
-    const baseline=data=>Object.fromEntries(Object.entries(data).filter(([k])=>!entities.includes(k)));
+    const baseline=data=>{
+      const value=Object.fromEntries(Object.entries(data).filter(([k])=>!entities.includes(k)));
+      if(value.settings) {
+        value.settings=structuredClone(value.settings);
+        delete value.settings.monthlyBackup; // a backup stamp is device-local evidence, not financial data
+      }
+      return value;
+    };
     if(!same(baseline(current),baseline(incoming))) return null;
     const shared=new Set(['owners','portfolios','institutions']);
     const withIds=['owners','portfolios','institutions','accounts','transactions',
@@ -255,7 +262,7 @@
         }
       } else combined[key].push(...structuredClone(incoming[key]));
     }
-    try {F.calculate(combined);return combined;} catch {return null;}
+    try {delete combined.settings.monthlyBackup;F.calculate(combined);return combined;} catch {return null;}
   }
 
   // Mandatory monthly backups are kept private, entirely inside the browser.
@@ -279,6 +286,7 @@
     snapshot.asOf=F.today();
     snapshot.source='Sauvegarde locale des comptes';
     snapshot.settings=structuredClone(data.settings);
+    delete snapshot.settings.monthlyBackup; // the receiving device must make its own monthly backup
     snapshot.owners=[structuredClone(owner)];
     snapshot.portfolios=[structuredClone(portfolio)];
     snapshot.institutions=[structuredClone(institution)];
@@ -291,8 +299,16 @@
     if(data.fxRates) snapshot.fxRates=structuredClone(data.fxRates);
     // Keep original account records for audit, but never replay already-included cash/holdings.
     snapshot.history=data.history.filter(h=>h.accountId===accountId).map(h=>structuredClone(h));
-    for(const t of data.transactions.filter(t=>t.accountId===accountId||t.toAccountId===accountId))
-      snapshot.history.push({...structuredClone(t),id:'archive-tx-'+t.id,kind:'ARCHIVE_TRANSACTION'});
+    for(const t of data.transactions.filter(t=>t.accountId===accountId||t.toAccountId===accountId)) {
+      // Do not leak the ID, notes or identity of a counterparty's account.
+      const entry={id:'archive-tx-'+t.id,kind:'ARCHIVE_TRANSACTION',accountId,
+        type:t.type,date:t.date,brokerRef:t.brokerRef};
+      for(const field of ['symbol','qty','price','amount','gross','tax','broker',
+        'fees','other','actualTotal','ratioFrom','ratioTo','attachmentId'])
+        if(t[field]!==undefined) entry[field]=structuredClone(t[field]);
+      if(t.type==='TRANSFER') entry.direction=t.accountId===accountId?'SORTIE':'ENTRÉE';
+      snapshot.history.push(entry);
+    }
     for(const o of data.orders.filter(o=>o.accountId===accountId))
       snapshot.history.push({...structuredClone(o),id:'archive-order-'+o.id,kind:'ARCHIVE_ORDER'});
     for(const e of data.events.filter(e=>e.accountId===accountId))
