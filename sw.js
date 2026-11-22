@@ -1,5 +1,5 @@
 const PREFIX='brvm-family-shell:'+self.registration.scope+'|';
-const CACHE=PREFIX+'v3.0.0-qualification-finale';
+const CACHE=PREFIX+'v3.0.0-monthly-backup-20261122';
 const SHELL=['index.html','style.css','engine.js','finance.js','vault.js','quotes.js','analysis.js','app.js',
   'manifest.webmanifest','icons/icon-192.png','icons/icon-512.png'];
 const urls=new Set(SHELL.map(p=>new URL(p,self.registration.scope).href));
