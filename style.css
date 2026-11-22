@@ -215,3 +215,10 @@ dialog header {position:sticky;top:0;z-index:1;display:flex;justify-content:spac
  .allocation-hole strong {font-size:17px}
  .allocation-pie {width:min(70vw,285px)}
 }
+
+.dashboard-advanced {border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:12px;margin:10px 0 18px}
+.dashboard-advanced > summary {font-size:14px;font-weight:750;color:var(--green);padding:7px 5px}
+.dashboard-advanced[open] > summary {margin-bottom:16px;border-bottom:1px solid var(--line)}
+.dashboard-advanced .pane {background:var(--raised)}
+.action-choices {display:grid;gap:8px;margin-top:14px}
+.action-choices button {text-align:left;min-height:50px;border:1px solid var(--line);background:var(--raised)}
