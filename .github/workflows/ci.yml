@@ -31,6 +31,13 @@ jobs:
           python -m pip install playwright==1.62.0
           python -m playwright install --with-deps chromium
           python tests/browser_e2e.py
+      - name: Capture écran fictive pour revue ergonomique
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRVM-Family-V3-Visuel-Mobile-Fictif
+          path: test_artifacts/
+          retention-days: 30
+          if-no-files-found: error
   package:
     name: Archive distribuable vierge
     needs: [finance-and-privacy, browser]

@@ -195,7 +195,7 @@
     }
     for (const o of d.orders) {
       fail(index.accounts.get(o.accountId)?.currency==='XOF' && symbol(o.symbol) && Number.isSafeInteger(o.qty) && o.qty>0 &&
-        num(o.limit,.01) && statuses.includes(o.status) && date(o.date) && Array.isArray(o.trace), 'Ordre invalide.');
+        num(o.limit,.01) && (!o.side || ['BUY','SELL'].includes(o.side)) && statuses.includes(o.status) && date(o.date) && Array.isArray(o.trace), 'Ordre invalide.');
       cent(o.limit);
     }
     return index;
@@ -355,7 +355,7 @@
           if(t.orderId) {
             const o=entities.orders.get(t.orderId);
             const filled=(executed.get(t.orderId)||0)+t.qty;
-            fail(o && t.type==='BUY' && o.accountId===t.accountId && o.symbol===t.symbol &&
+            fail(o && t.type===(o.side||'BUY') && o.accountId===t.accountId && o.symbol===t.symbol &&
               t.date>=(o.transmittedDate||o.date) && filled<=o.qty,'Avis incompatible avec la quantité, la date ou le compte de l’ordre.');
             executed.set(o.id,filled);
           }
@@ -450,9 +450,15 @@
         (o.status!=='NON EXÉCUTÉ'||q===0),'Statut d’ordre incohérent avec les exécutions.');
       if(pending.includes(o.status)) {
         const remaining=o.qty-q, a=entities.accounts.get(o.accountId);
-        const reserve=Math.round(cent(o.limit)*remaining*(1+(o.estimateRate ?? a.brokerRate+a.otherRate)));
-        fail(Number.isSafeInteger(reserve) && reserve>=0,'Réserve d’ordre invalide.');
-        reserves.set(a.id,(reserves.get(a.id)||0)+reserve);
+        if(o.side==='SELL') {
+          const shareKey=key(a.id,o.symbol), committed=(reserves.get(shareKey)||0)+remaining;
+          fail(committed<=((accounts.get(a.id).positions[o.symbol]?.qty)||0),'Ordres de vente supérieurs aux actions détenues et non encore vendues.');
+          reserves.set(shareKey,committed);
+        } else {
+          const reserve=Math.round(cent(o.limit)*remaining*(1+(o.estimateRate ?? a.brokerRate+a.otherRate)));
+          fail(Number.isSafeInteger(reserve) && reserve>=0,'Réserve d’ordre invalide.');
+          reserves.set(a.id,(reserves.get(a.id)||0)+reserve);
+        }
       }
     }
     const splits=new Map();
@@ -647,7 +653,7 @@
     fail(o && allowed[o.status]?.includes(status),'Transition d’ordre impossible.');
     if(status==='TRANSMIS') {
       fail(!isArchived(next,next.accounts.find(a=>a.id===o.accountId)),'Compte archivé.');
-      fail(!banks.has(o.symbol) && next.instruments[o.symbol]?.screen!=='Exclu','Achat exclu des ordres proposés.');
+      if(o.side!=='SELL') fail(!banks.has(o.symbol) && next.instruments[o.symbol]?.screen!=='Exclu','Achat exclu des ordres proposés.');
       o.transmittedDate=today();
     }
     fail(text(reference,4,180),'Référence manuelle requise.');
@@ -661,7 +667,7 @@
     const preview={id:planId,portfolioId:plan.portfolioId,date,mode:plan.mode,forecast:copy(plan.funding)};
     next.plans.push(preview);
     for(const l of plan.lines) next.orders.push({id:id(),planId,accountId:l.accountId,symbol:l.symbol,
-      qty:l.qty,limit:l.price,estimateRate:l.estimateRate,date,status:'PROJET',trace:[{date,status:'PROJET'}]});
+      qty:l.qty,limit:l.price,estimateRate:l.estimateRate,side:l.side||'BUY',date,status:'PROJET',trace:[{date,status:'PROJET'}]});
     calculate(next);
     return next;
   }
@@ -743,9 +749,9 @@
     const envelopes=equate(totals,budget);
     return Object.fromEntries([...groups].flatMap(([id,list])=>Object.entries(equate(list,envelopes[id]))));
   }
-  function propose(d,{portfolioId,accountIds,mode='mensuel',budget=0,manual={},exceptional=false,verifiedOnly=false,now=today()}) {
+  function propose(d,{portfolioId,accountIds,mode='cibles',budget=0,manual={},exceptional=false,verifiedOnly=false,now=today()}) {
     const p=calculate(d).portfolios.find(x=>x.id===portfolioId);
-    fail(p && ['mensuel','equilibre','equilibre-sgi','egalisation','manuel'].includes(mode),'Portefeuille ou mode inconnu.');
+    fail(p && ['cibles','mensuel','equilibre','equilibre-sgi','egalisation','manuel'].includes(mode),'Portefeuille ou mode inconnu.');
     const requested=new Set(accountIds), accounts=p.accounts.filter(a=>requested.has(a.id) && a.currency==='XOF' && !isArchived(d,a));
     fail(accounts.length===requested.size && accounts.length>0,'Sélectionner des comptes XOF actifs du même portefeuille.');
     fail(Number.isSafeInteger(budget) && budget>=0,'Budget entier en FCFA obligatoire.');
@@ -754,12 +760,15 @@
     const allocate=mode==='equilibre-sgi'?allocateByInstitution:equate;
     let funding=equalize ? allocate(accounts,budget) :
       Object.fromEntries(accounts.map(a=>[a.id,mode==='mensuel'?a.monthly:manual[a.id] ?? 0]));
+    if(mode==='cibles') funding=Object.fromEntries(accounts.map(a=>[a.id,0]));
     const planned=Object.values(funding).reduce((s,x)=>s+x,0);
     fail(Object.values(funding).every(x=>num(x)) && (mode!=='manuel'||planned<=budget),'Versements projetés supérieurs au budget.');
     const balances=Object.fromEntries(accounts.map(a=>[a.id,a.available]));
     const limits=Object.fromEntries(accounts.map(a=>[a.id,Math.floor(a.available)]));
     const spendable=Object.values(limits).reduce((s,x)=>s+x,0);
     let remaining=exceptional || mode!=='mensuel' ? Math.min(spendable,budget) : spendable;
+    if(mode==='cibles' && p.accounts.some(a=>E.symbols.some(s=>(a.positions[s]?.qty||0)>0 && !(a.positions[s]?.price>0))))
+      throw Error('Cours manquant sur un titre CORE détenu : renseignez les cours avant toute proposition de rééquilibrage.');
     const initial=Object.fromEntries(E.symbols.map(s=>[s,p.accounts.reduce((n,a)=>n+(a.positions[s]?.market||0),0)]));
     const values={...initial}, lines=new Map(), ignored=[];
     const eligible=E.symbols.filter(s=>{

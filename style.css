@@ -169,3 +169,56 @@ dialog header {position:sticky;top:0;z-index:1;display:flex;justify-content:spac
 @media (max-width:380px) {
   .fields,.targets {grid-template-columns:1fr}
 }
+
+/* Mobile-first portfolio actions and accessible graphical allocation. */
+.quick-actions {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0 0 16px}
+.quick-actions button {min-height:52px;border:1px solid #526075;font-weight:750;padding:10px 7px;white-space:normal}
+.quick-actions .primary {border-color:var(--green)}
+.backup-banner {display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid #7e6750;border-radius:12px;background:#2c291f;padding:9px 12px;margin-bottom:13px;font-size:13px}
+.backup-banner span {color:#f3dfb8}
+.backup-banner .primary {min-height:40px}
+.allocation-grid {display:grid;grid-template-columns:minmax(225px,2fr) minmax(240px,3fr);gap:20px;align-items:center}
+.allocation-pie-wrap {display:flex;justify-content:center;align-items:center;padding:14px 0}
+.allocation-pie {width:min(100%,310px);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;border:1px solid #5b657a;box-shadow:0 0 0 5px #ffffff09}
+.allocation-hole {background:var(--panel);width:57%;height:57%;border-radius:50%;display:flex;flex-direction:column;justify-content:center;text-align:center;align-items:center;gap:5px;padding:8px;border:1px solid #ffffff2a}
+.allocation-hole small {font-size:11px}
+.allocation-hole strong {font-size:clamp(14px,2.5vw,22px);line-height:1.12;overflow-wrap:anywhere}
+.allocation-legend {list-style:none;padding:0;margin:0;display:grid;gap:4px}
+.allocation-legend li {display:flex;justify-content:space-between;gap:8px;border-bottom:1px solid #343c4b;padding:7px 2px}
+.allocation-name {display:flex;align-items:center;flex-wrap:wrap;gap:5px;min-width:0}
+.allocation-name i {width:11px;height:11px;border-radius:3px;display:block;flex:none}
+.allocation-name small {width:100%;padding-left:16px}
+.allocation-value {display:flex;flex-direction:column;align-items:end;text-align:right;flex:none}
+.allocation-value strong {font-size:14px}
+.allocation-value small {font-size:11px}
+.core-progress {margin:13px 0}
+.core-line {display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px}
+.core-line span {color:var(--muted);text-align:right}
+.core-track {position:relative;height:13px;border-radius:8px;background:#2f384a;margin-top:4px;overflow:visible}
+.core-track span {display:block;background:var(--green);height:100%;border-radius:8px;min-width:1px}
+.core-track i {display:block;position:absolute;top:-3px;height:19px;border-left:2px solid #ffcd82}
+.trade-preview {border:1px solid #495775;background:#202c36;border-radius:10px;padding:12px;font-size:13px}
+.trade-preview strong {display:block;font-size:17px;margin-top:5px}
+@media(max-width:890px) {
+ .allocation-grid {grid-template-columns:1fr}
+ .allocation-pie {width:min(72vw,295px)}
+ .quick-actions {grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:690px) {
+ main {padding-top:max(25px,env(safe-area-inset-top,0px))}
+ .quick-actions {grid-template-columns:repeat(2,minmax(0,1fr))}
+ .quick-actions button {min-height:56px}
+ .quick-actions button:last-child {grid-column:span 2}
+ .backup-banner {font-size:12px;padding:8px;flex-wrap:wrap}
+ .backup-banner button {width:100%}
+ .allocation-legend li {padding:8px 0}
+ .allocation-hole strong {font-size:17px}
+ .allocation-pie {width:min(70vw,285px)}
+}
+
+.dashboard-advanced {border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:12px;margin:10px 0 18px}
+.dashboard-advanced > summary {font-size:14px;font-weight:750;color:var(--green);padding:7px 5px}
+.dashboard-advanced[open] > summary {margin-bottom:16px;border-bottom:1px solid var(--line)}
+.dashboard-advanced .pane {background:var(--raised)}
+.action-choices {display:grid;gap:8px;margin-top:14px}
+.action-choices button {text-align:left;min-height:50px;border:1px solid var(--line);background:var(--raised)}

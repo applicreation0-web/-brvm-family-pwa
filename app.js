@@ -9,18 +9,18 @@
   const amountIn=(v,c)=>!c||c==='XOF'?fc(v):fmt.format(v)+' '+c;
   const pct=v=>v==null?'—':fmt.format(v*100)+' %';
   const showDate=v=>F.date(v)?v.split('-').reverse().join('/'):'—';
-  const col=['#74e0ac','#79adff','#c3afff','#ffc37a','#64dae7','#ff9aad','#e6df7d'];
+  const col=['#74e0ac','#79adff','#c3afff','#ffc37a','#64dae7','#ff9aad','#e6df7d','#d1a6ff','#83b8b8','#f6a0be','#b6d4a7','#de9f75'];
   const labels={DEPOSIT:'Versement reçu',WITHDRAW:'Retrait',BUY:'Achat',SELL:'Vente',FEE:'Frais de compte',
     DIVIDEND:'Dividende encaissé',SPLIT:'Fractionnement / regroupement',BONUS:'Actions gratuites',RIGHTS:'Droits',
     STOCK_DIVIDEND:'Dividende en actions',RIGHTS_EXPIRY:'Expiration de droits',TRANSFER:'Transfert',CORRECTION:'Rectification'};
   const basis={manual:'Saisi localement',official:'Officiel (source déclarée)',provisional:'Provisoire',theoretical:'Théorique après split',execution:'Prix d’exécution'};
-  const pages={dashboard:['Vue d’ensemble','▦'],accounts:['Comptes et positions','▤'],invest:['Investissement','◎'],orders:['Ordres','⇄'],
+  const pages={dashboard:['Vue d’ensemble','▦'],accounts:['Comptes et positions','▤'],invest:['Investissement ponctuel','◎'],orders:['Ordres achat / vente','⇄'],
     events:['Dividendes et FCP','◈'],history:['Historique et analyses','◷'],settings:['Cibles et risques','⚙'],data:['Données et sauvegarde','⬡']};
   let store, record, db, calc, tab='dashboard', portfolioId='', busy=false, refreshing=false, plan=null, comparison=null, planInputs=null, importPreview=null;
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
   let importRevision, mergedImport, importReadTicket=0, pendingBackup=null;
-  let quoteOptions=null, checkpoint=null, restoreFocus=null, projectInputs={monthly:null,fee:.016,dividend:.03}, historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
+  let quoteOptions=null, checkpoint=null, restoreFocus=null, historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
   const findAccount=id=>db.accounts.find(x=>x.id===id);
   const institution=id=>db.institutions.find(x=>x.id===id)?.label||'—';
@@ -134,36 +134,98 @@
   function welcome() {
     return `<div class="welcome"><div><p class="overline">BOURSE RÉGIONALE DES VALEURS MOBILIÈRES</p><h2>Suivez vos portefeuilles BRVM.</h2><p>Retrouvez les positions, liquidités et ordres de chaque compte. Les comptes et les justificatifs sont conservés sur cet appareil.</p><div class="actions">${btn('import','Importer mes données','','primary')}${btn('new-account','Créer un compte')}</div></div><div class="welcome-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div>`;
   }
+
+  // Camembert fondé sur les titres réellement valorisés et les espèces, par portefeuille.
+  // Les positions sans cours restent explicitement signalées, jamais converties en zéro "connu".
+  function allocationVisual(p) {
+    const holdings=new Map();let cash=0, missing=0,missingFx=0;
+    for(const a of p.accounts) {
+      const rate=a.rate?.xof||(a.currency==='XOF'?1:0);
+      if(!rate) {if(a.cash||Object.values(a.positions).some(x=>x.qty)) missingFx++;continue;}
+      cash+=a.cash*rate;
+      for(const pos of Object.values(a.positions)) {
+        if(pos.qty<=0) continue;
+        if(!(pos.price>0)) {missing++;continue;}
+        holdings.set(pos.symbol,(holdings.get(pos.symbol)||0)+pos.market*rate);
+      }
+    }
+    const titles=[...holdings].filter(([,value])=>value>0).sort((a,b)=>b[1]-a[1]);
+    const entries=titles.map(([symbol,value])=>({symbol,value}));
+    if(cash>0) entries.push({symbol:'Espèces',value:cash});
+    const total=entries.reduce((n,x)=>n+x.value,0);
+    if(!total) return pane('Répartition réelle',empty('Aucune valeur connue à représenter. Ajoutez les cours des titres.'), 'Valorisations issues des cours disponibles');
+    let start=0;const stops=entries.map((x,i)=>{
+      const from=start;start+=x.value/total*100;
+      return col[i%col.length]+' '+from.toFixed(5)+'% '+start.toFixed(5)+'%';
+    }).join(', ');
+    const core=E.symbols.reduce((n,x)=>n+(holdings.get(x)||0),0);
+    const legend=entries.map((x,i)=>{
+      const actual=x.value/total;
+      const coreWeight=E.symbols.includes(x.symbol)&&core>0?(holdings.get(x.symbol)||0)/core:null;
+      const target=E.symbols.includes(x.symbol)?p.targets[x.symbol]:null;
+      return `<li><span class="allocation-name"><i style="background:${col[i%col.length]}" aria-hidden="true"></i><b>${esc(x.symbol)}</b><small>${esc(E.names[x.symbol]||'')}</small></span>
+        <span class="allocation-value"><strong>${pct(actual)}</strong><small>${fc(x.value)}</small>${db.quotes[x.symbol]?'<small>Cours '+showDate(db.quotes[x.symbol].date)+(F.stale(db.quotes[x.symbol],db.settings.staleDays)?' · ancien':'')+'</small>':''}${target!=null?'<small>CORE : '+pct(coreWeight)+' / cible '+pct(target)+'</small>':''}</span></li>`;
+    }).join('');
+    const warning=missing||missingFx?`<p class="quiet" role="status">Répartition partielle : ${missing} titre(s) sans cours et ${missingFx} compte(s) sans conversion. Aucun montant inconnu n'est valorisé à zéro.</p>`:'';
+    return `<article class="pane allocation"><div class="pane-head"><h2>Répartition réelle · ${esc(p.label)}</h2><p>Sur les actifs valorisés, espèces comprises · ${fc(total)}</p></div>
+       <div class="allocation-grid"><div class="allocation-pie-wrap"><div class="allocation-pie" role="img" aria-label="Répartition actuelle des actifs cotés et des espèces" style="background:conic-gradient(${stops})"><div class="allocation-hole"><small>Patrimoine connu</small><strong>${fc(total)}</strong></div></div></div>
+       <ul class="allocation-legend">${legend}</ul></div>${warning}
+       <p class="quiet">Pourcentage principal = part du patrimoine connu. Sous chaque titre CORE : part des actions CORE / cible configurée. Les prix doivent être datés.</p>
+       <div class="actions">${go('invest','Rééquilibrer sur les cibles')}${go('accounts','Voir toutes les actions')}</div></article>`;
+  }
+  function coreProgress(p) {
+    const actual=Object.fromEntries(E.symbols.map(s=>[s,p.accounts.reduce((sum,a)=>sum+(a.positions[s]?.market||0),0)]));
+    const known=Object.values(actual).reduce((n,v)=>n+v,0);
+    const rows=E.symbols.map(s=>{
+      const weight=known?actual[s]/known:0, target=p.targets[s], diff=weight-target;
+      const width=Math.min(100,Math.round(weight*100)),targetWidth=Math.min(100,Math.round(target*100));
+      return `<div class="core-progress">
+        <div class="core-line"><strong>${esc(s)}</strong><span>${known?pct(weight):'—'} · cible ${pct(target)} · écart ${known?(diff>=0?'+':'')+pct(diff):'—'}</span></div>
+        <div class="core-track" aria-label="${esc(s)} actuellement ${pct(weight)}, cible ${pct(target)}"><span style="width:${width}%"></span><i style="left:${targetWidth}%"></i></div></div>`;
+    }).join('');
+    const missing=p.accounts.some(a=>E.symbols.some(sym=>(a.positions[sym]?.qty||0)>0 && !(a.positions[sym]?.price>0)));
+    return `<article class="pane"><div class="pane-head"><h2>CORE · actuel contre objectif</h2><p>Le trait clair indique la cible, la barre représente le poids réel dans les actions CORE.</p></div>
+      ${known?rows:empty('Aucune action CORE valorisée. Importez d’abord les cours.')}
+      ${missing?'<p class="quiet">Cours manquants : les pourcentages sont incomplets.</p>':''}
+      <div class="actions">${go('invest','Acheter les lignes sous-pondérées')}</div></article>`;
+  }
+  function quickActions() {
+    return `<nav class="quick-actions" aria-label="Opérations essentielles">
+      ${btn('trade-buy','Acheter','','primary')}${btn('trade-sell','Vendre')}
+      ${btn('dividend-received','Dividende')}${btn('corporate-action','Opérations sur titres')}
+      ${btn('monthly-backup','Sauvegarder')}</nav>`;
+  }
   function dashboard() {
     if(!db.accounts.length) return welcome();
     const p=getPortfolio()||calc.portfolios[0], all=calc.all;
     const orderCount=db.orders.filter(o=>!['RAPPROCHÉ','ANNULÉ','NON EXÉCUTÉ'].includes(o.status)).length;
     const quotes=Object.values(db.quotes);
     const old=p.accounts.reduce((n,a)=>n+Object.values(a.positions).filter(x=>x.qty&&F.stale(x.quote,db.settings.staleDays)).length,0);
-    const composition=new Map();
-    for(const a of p.accounts) for(const x of Object.values(a.positions)) if(x.market)
-      composition.set(x.symbol,(composition.get(x.symbol)||0)+x.market);
     const points=db.observations.filter(x=>x.portfolioId===p.id&&x.complete&&x.attestation==='close-v1').sort((a,b)=>a.date.localeCompare(b.date));
-    return `<div class="context"><div><p class="overline">Patrimoine familial${all.unknown?' · valorisation partielle':''}</p><strong class="total">${fc(all.total)}</strong><p class="quiet">${db.accounts.length} comptes · ${db.portfolios.length} portefeuilles · ${calc.institutions.length} SGI</p></div>${portfolioPicker()}</div>
+    return `<div class="context"><div><p class="overline">Portefeuille ${p.unknown?'· cours incomplets':''}</p><strong class="total">${fc(p.total)}</strong><p class="quiet">${p.accounts.length} compte(s) · Patrimoine familial connu : ${fc(all.total)}</p></div>${portfolioPicker()}</div>
+      ${quickActions()}
+      ${allocationVisual(p)}
       <div class="kpis">${kpi('Patrimoine du portefeuille',fc(p.total),p.unknown?'Valeur partielle':'Titres et liquidités','accent')}${kpi('Cash disponible',fc(p.available),`${fc(p.reserved)} réservés sur ${fc(p.cash)}`)}
       ${kpi('Plus-value latente',fc(p.pnl),p.unknown?'Positions cotées uniquement':`Coût réel des titres · ${fc(p.cost)}`,p.pnl<0?'loss':'gain')}
       ${kpi('Dividendes nets reçus',fc(p.dividends),`${fc(p.grossDividends)} bruts depuis l’ouverture`)}</div>
-      <div class="split">${pane('Évolution enregistrée',curve(points),'Séances avec cotations et taux documentés')}${pane('Allocation par titre',bars([...composition].sort((a,b)=>b[1]-a[1]).map(([label,value])=>({label,value}))))}</div>
-      <div class="split">${pane('Répartition par SGI',bars(calc.institutions.map(i=>({label:i.label,value:p.accounts.filter(a=>a.institutionId===i.id).reduce((n,a)=>n+(a.totalXof??0),0)}))))}
-      ${pane('Suivi depuis l’ouverture',table(['Indicateur','Valeur'],[['Frais et taxes comptabilisés',fc(p.feesPaid+p.taxes)],['Gains réalisés',fc(p.realized)],['Apports nets',fc(p.netContribution)],['Ordres à suivre',orderCount],['Cours absents ou anciens',old],['Cours disponibles',quotes.length]])+`<div class="actions">${go('orders','Consulter les ordres')}</div>`)}</div>
-      ${pane('Comptes familiaux',table(['Compte','Titres','Cash disponible','Patrimoine'],calc.accounts.map(a=>[esc(accName(a.id)),fc(a.market),amountIn(a.available,a.currency),a.totalXof==null?'Taux absent':fc(a.totalXof)]))) }`;
+      ${coreProgress(p)}
+      ${points.length>1?pane('Évolution du patrimoine',curve(points),'Valeurs historiques validées et comparables'):''}
+      <details class="dashboard-advanced"><summary>Voir le détail des comptes et des analyses</summary>
+      <div class="split">${pane('Répartition par SGI',bars(calc.institutions.map(i=>({label:i.label,value:p.accounts.filter(a=>a.institutionId===i.id).reduce((n,a)=>n+(a.totalXof??0),0)}))))}</div>
+      <div class="split">${pane('Suivi depuis l’ouverture',table(['Indicateur','Valeur'],[['Frais et taxes comptabilisés',fc(p.feesPaid+p.taxes)],['Gains réalisés',fc(p.realized)],['Apports nets',fc(p.netContribution)],['Ordres à suivre',orderCount],['Cours absents ou anciens',old],['Cours disponibles',quotes.length]])+`<div class="actions">${go('orders','Consulter les ordres')}</div>`)}</div>
+      ${pane('Comptes familiaux',table(['Compte','Titres','Cash disponible','Patrimoine'],calc.accounts.map(a=>[esc(accName(a.id)),fc(a.market),amountIn(a.available,a.currency),a.totalXof==null?'Taux absent':fc(a.totalXof)]))) }</details>`;
   }
   function accountsView() {
     const p=getPortfolio();
-    return `<div class="context compact">${p?portfolioPicker()+field('account','Filtrer les comptes',select('account',[['','Tous les comptes'],...accountsOptions(p.accounts)],accountFilter,'id="account-filter"')):''}<div class="actions">${btn('new-account','Ajouter un compte','','primary')}${btn('transaction','Saisir une opération')}</div></div>
+    return `<div class="context compact">${p?portfolioPicker()+field('account','Filtrer les comptes',select('account',[['','Tous les comptes'],...accountsOptions(p.accounts)],accountFilter,'id="account-filter"')):''}<div class="actions">${btn('trade-buy','Acheter','','primary')}${btn('trade-sell','Vendre')}${btn('new-account','Ajouter un compte')}</div></div>
       ${p?.accounts.filter(a=>!accountFilter||a.id===accountFilter).map(a=>pane(accName(a.id),
         `<div class="account-total"><strong>${amountIn(a.total,a.currency)}</strong><span>Cash ${amountIn(a.cash,a.currency)} · Disponible ${amountIn(a.available,a.currency)} · Réservé ${amountIn(a.reserved,a.currency)}</span>
         ${a.currency!=='XOF'?`<p class="quiet">${a.rate?`Contre-valeur indicative ${fc(a.totalXof)} · taux du ${showDate(a.rate.date)} · ${esc(a.rate.source)}${F.stale(a.rate,db.settings.staleDays)?' · taux ancien':''}`:'Taux absent · exclu du total XOF'}</p>`:''}
         ${F.isArchived(db,a)?tag('Archivé'):''}</div>`+
-        table(['Instrument','Quantité','Coût de revient','PRU','Cours / VL','Valeur','P/L latent'],Object.values(a.positions).filter(s=>s.qty>0).map(s=>
+        table(['Instrument','Quantité','Coût de revient','PRU','Cours / VL','Valeur','P/L latent','Opération'],Object.values(a.positions).filter(s=>s.qty>0).map(s=>
           [`<b>${esc(s.symbol)}</b><br><small>${esc(db.instruments[s.symbol]?.label||E.names[s.symbol]||'')}${['SGBC','CBIB'].includes(s.symbol)?' · Banque historique':''}</small>`,
           fmt.format(s.qty),fc(s.cost),fc(s.cost/s.qty),s.price?`${fc(s.price)}<br><small>${showDate(s.quote.date)} ${F.stale(s.quote,db.settings.staleDays)?'· Ancien':''}${Math.abs(s.price-s.quote.price)>1e-7?' · Après split':''}</small>`:'—',
-          s.price?fc(s.market):'—',s.pnl===null?'—':`<strong class="${s.pnl<0?'loss':'gain'}">${fc(s.pnl)}</strong>`])))).join('')||empty('Ajoutez un compte SGI pour suivre ses positions.')}
+          s.price?fc(s.market):'—',s.pnl===null?'—':`<strong class="${s.pnl<0?'loss':'gain'}">${fc(s.pnl)}</strong>`,btn('sell-position','Vendre',a.id+'|'+s.symbol)])))).join('')||empty('Ajoutez un compte SGI pour suivre ses positions.')}
       ${pane('Personnes, portefeuilles et SGI',`<div class="actions">${btn('entity','Ajouter une personne','owners')}${btn('entity','Ajouter un portefeuille','portfolios')}${btn('entity','Ajouter une SGI','institutions')}</div>`+
         table(['Type','Nom','État','Action'],['owners','portfolios','institutions','accounts'].flatMap(group=>db[group].map(v=>[
           {owners:'Personne',portfolios:'Portefeuille',institutions:'SGI',accounts:'Compte'}[group],
@@ -181,7 +243,7 @@
       (!a.id?field('currency','Devise du compte',select('currency',F.currencies.map(c=>[c,c]),'XOF'))+
       field('openedOn','Date d’ouverture',input('openedOn',F.today(),'date','required max="'+F.today()+'"'))+
       field('cash','Cash initial confirmé dans la devise du compte',money('cash',0)):'')+
-      `<div class="fields">${field('monthly','Versement mensuel (FCFA)',money('monthly',a.monthly??'',false))}${field('broker','Courtage estimé (%)',input('broker',(a.brokerRate??.01)*100,'number','min="0" max="1" step="0.01" required'))}
+      `<div class="fields">${field('broker','Courtage estimé (%)',input('broker',(a.brokerRate??.01)*100,'number','min="0" max="1" step="0.01" required'))}
       ${field('other','Autres frais estimés (%)',input('other',Math.round((a.otherRate??.006)*10000)/100,'number','min="0" max="10" step="0.01" required'))}</div>`+
       (a.id?`<label class="check"><input name="archived" type="checkbox" ${a.archived?'checked':''}> Archiver le compte</label>`:'')+
       '<p class="quiet">Les comptes en devises suivent les liquidités. Les titres BRVM et les simulations restent sur les comptes XOF.</p>','Enregistrer le compte',a.id);
@@ -201,39 +263,37 @@
     const p=getPortfolio();
     if(!p) return welcome();
     const act=p.accounts.filter(a=>a.currency==='XOF'&&!F.isArchived(db,a)), inp=planInputs||{};
-    return `<div class="context compact">${portfolioPicker()}<p class="quiet">Les versements prévus ne financent aucun achat avant leur crédit réel.</p></div>
-      <div class="invest-layout">${pane('Préparer un investissement',act.length?form('invest',`
-      <fieldset><legend>1. Choisir les comptes</legend>
-      <details ${act.length<=5?'open':''}><summary>Comptes et montants disponibles (${act.length})</summary>
-      ${act.map((a,i)=>`<div class="investment-account"><label class="check"><input name="accounts" type="checkbox" value="${attr(a.id)}" ${(inp.accountIds?inp.accountIds.includes(a.id):i<2)?'checked':''}>${esc(accName(a.id))}</label><small>Cash disponible ${fc(a.available)} · Mensuel ${fc(a.monthly)}</small></div>`).join('')}</details>
+    const available=Math.floor(act.reduce((n,a)=>n+a.available,0));
+    return `<div class="context compact">${portfolioPicker()}<p class="quiet">Investissement ponctuel uniquement. Aucune mensualité ni versement futur n'est ajouté fictivement.</p></div>
+      <div class="invest-layout">${pane('Achat ponctuel · rattrapage des cibles',act.length?form('invest',`
+      <fieldset><legend>1. Espèces disponibles par compte</legend>
+      ${act.map(a=>`<div class="investment-account"><label class="check"><input name="accounts" type="checkbox" value="${attr(a.id)}" ${inp.accountIds?inp.accountIds.includes(a.id)?'checked':'':'checked'}>${esc(accName(a.id))}</label><small>Espèces mobilisables : ${fc(a.available)} · courtage maximal : 1 % (taux du compte ${pct(a.brokerRate)})</small></div>`).join('')}
       </fieldset>
-      <fieldset><legend>2. Fixer le budget</legend>
-      ${field('mode','Mode',select('mode',[['mensuel','Mensuel fixe'],['equilibre','Équilibrage 50/50 · deux comptes'],['equilibre-sgi','Équilibrage 50/50 · deux SGI'],['egalisation','Égalisation · N comptes'],['manuel','Manuel']],inp.mode||'mensuel'))}
-      ${field('budget','Budget exceptionnel ou plafond (FCFA)',integer('budget',inp.budget??500000))}
+      <fieldset><legend>2. Plafond ponctuel</legend>
+      ${field('budget','Budget maximum à dépenser (FCFA)',integer('budget',inp.budget??available))}
+      <p class="quiet">Le plafond est limité aux espèces réellement présentes sur les comptes sélectionnés. Pour investir un nouveau versement, enregistrez d'abord son crédit confirmé.</p>
       </fieldset>
-      <details><summary>3. Ajuster les options</summary>
-      <div data-manual ${inp.mode==='manuel'?'':'hidden'}>
-      ${act.map(a=>field('manual_'+a.id,accName(a.id)+' · versement prévu',integer('manual_'+a.id,inp.manual?.[a.id]||0))).join('')}
-      </div>
-      <label class="check"><input type="checkbox" name="verifiedOnly" ${inp.verifiedOnly?'checked':''}> Limiter aux titres documentés</label>
-      <label class="check"><input type="checkbox" name="exceptional" ${inp.exceptional?'checked':''}> Limiter les achats au budget saisi en mode mensuel</label>
-      </details>`,'4. Calculer la simulation') : empty('Aucun compte XOF actif dans ce portefeuille.'))}
-      <div>${plan?proposal(plan):pane('Proposition',empty('Choisissez les comptes puis calculez une proposition.'))}</div></div>`;
+      <label class="check"><input type="checkbox" name="verifiedOnly" ${inp.verifiedOnly?'checked':''}> Réserver la simulation aux titres dont la conformité est documentée</label>
+      <p class="quiet">L'algorithme cible les titres CORE actuellement sous-pondérés. Il tient compte des prix datés, des actions entières et des frais estimés par SGI. Aucune vente n'est simulée automatiquement.</p>
+      `,'Calculer l’investissement ponctuel') : empty('Aucun compte XOF actif dans ce portefeuille.'))}
+      <div>${plan?proposal(plan):pane('Résultat',empty('Sélectionnez les comptes, puis calculez la proposition.'))}</div></div>`;
   }
   function proposal(p) {
-    const rows=p.accounts.map(a=>[esc(accName(a.id)),fc(a.current),fc(p.funding[a.id]),fc(a.fees),fc(a.cashRemaining),fc(a.forecast)]);
-    return pane('Proposition d’achats',
-      `<div class="account-total">${tag('Simulation')}${tag('Télécom cible · '+pct(p.telecom),p.telecom>=.40?'wait':'ok')}<span>Écart aux cibles ${pct(p.deviation.before)} → ${pct(p.deviation.after)}</span></div>`+
-      table(['Compte','Valeur actuelle','Versement projeté','Frais estimés','Cash confirmé restant','Valeur après scénario'],rows)+
-      (comparison?`<details><summary>Comparer avec ${comparison.mode==='mensuel'?'les versements fixes':'l’équilibrage 50/50'}</summary>
-        ${table(['Compte','Versement projeté','Valeur après scénario'],comparison.accounts.map(a=>[esc(accName(a.id)),fc(comparison.funding[a.id]),fc(a.forecast)]))}</details>`:'')+
-      '<p class="quiet">Le rééquilibrage répartit les versements par valeur après les frais estimés, dans la limite des apports possibles. Des versements fixes différents peuvent creuser l’écart.</p>'+
-      table(['Titre / compte','Actions','Limite / provenance','Courtage','Autres frais','Coût estimé'],p.lines.map(l=>[
-        `<b>${esc(l.symbol)}</b><br><small>${esc(accName(l.accountId))}</small><br><small>Cible ${pct(p.targets[l.symbol])} · Avant ${pct(p.before[l.symbol])} · Après ${pct(p.after[l.symbol])}</small><br><small>Conformité : ${esc(F.screening(db.instruments[l.symbol]))}</small>`,l.qty,
-        `${fc(l.price)}<br><small>${showDate(l.quote.date)} · ${esc(l.quote.source)}</small>`,fc(l.broker),fc(l.other),fc(l.total)]))+
-      `<details><summary>Pondérations avant et après</summary>${table(['Titre','Avant','Après','Cible'],E.symbols.map(s=>[s,pct(p.before[s]),pct(p.after[s]),pct(p.targets[s])]))}</details>
-      <p class="quiet">Les achats entiers privilégient les lignes sous-pondérées. Les dividendes reçus sont inclus dans le cash du compte. ${p.ignored.length?'Cours absents, anciens, suspendus ou titres exclus : '+esc(p.ignored.join(', '))+'.':''}</p>
-      <div class="actions">${btn('save-plan',p.lines.length?'Enregistrer le projet':'Enregistrer le scénario','','primary')}${btn('export-plan','Exporter la simulation')}</div>`);
+    const rows=p.accounts.map(a=>[esc(accName(a.id)),fc(a.current),fc(a.cash),fc(a.fees),fc(a.cashRemaining),fc(a.forecast)]);
+    const fees=p.lines.reduce((n,l)=>n+l.broker+l.other,0);
+    const spent=p.lines.reduce((n,l)=>n+l.total,0);
+    const coreRows=E.symbols.map(s=>[esc(s)+' · '+esc(E.names[s]||''),pct(p.before[s]),pct(p.targets[s]),pct(p.after[s]),pct(p.after[s]-p.targets[s])]);
+    return pane('Achats ponctuels simulés',
+      `<div class="account-total">${tag('Simulation sans exécution','ok')}<strong>${fc(spent)}</strong><span>Frais estimés inclus : ${fc(fees)}</span></div>
+      <p class="quiet">Écart absolu aux cibles : ${pct(p.deviation.before)} avant → ${pct(p.deviation.after)} après. La valeur ne doit pas augmenter fictivement du montant dépensé : seul le coût des frais la réduit.</p>
+      ${table(['Compte','Valeur actuelle','Cash disponible','Frais prévus','Cash après','Valeur après frais'],rows)}
+      ${table(['Titre / compte','Qté à acheter','Cours daté','Courtage','Autres frais','Débit total estimé'],p.lines.map(l=>[
+        `<b>${esc(l.symbol)}</b><br><small>${esc(accName(l.accountId))}</small>`,fmt.format(l.qty),
+        `${fc(l.price)}<br><small>${showDate(l.quote.date)} · ${esc(l.quote.source)}</small>`,
+        fc(l.broker),fc(l.other),fc(l.total)]))}
+      <details open><summary>Répartition réelle, après achats et cible</summary>${table(['Titre CORE','Avant','Cible','Après','Écart après'],coreRows)}</details>
+      <p class="quiet">Seul un avis d'opération confirmé modifie les quantités ou les liquidités. Les frais définitifs sont ceux du courtier, dans la limite du plafond de courtage de 1 %.</p>
+      <div class="actions">${p.lines.length?btn('save-plan','Enregistrer les ordres d’achat proposés','','primary'):''}${btn('export-plan','Exporter la simulation')}${btn('trade-sell','Vendre des actions')}</div>`);
   }
   function ordersView() {
     const rows=db.orders.slice().reverse().map(o=>{
@@ -241,13 +301,13 @@
       const actions={PROJET:[['TRANSMIS','Marquer transmis'],['ANNULÉ','Annuler'],['NON EXÉCUTÉ','Non exécuté']],
         TRANSMIS:[['ANNULÉ','Annuler'],['NON EXÉCUTÉ','Non exécuté']],
         'PARTIELLEMENT EXÉCUTÉ':[['ANNULÉ','Annuler le reliquat']], 'EXÉCUTÉ':[['RAPPROCHÉ','Rapprocher']]};
-      return [`<b>${esc(o.symbol)}</b><br><small>${esc(accName(o.accountId))}</small>`,tag(o.status,o.status==='RAPPROCHÉ'?'ok':'wait'),
+      return [`<b>${o.side==='SELL'?'Vente':'Achat'} · ${esc(o.symbol)}</b><br><small>${esc(accName(o.accountId))}</small>`,tag(o.status,o.status==='RAPPROCHÉ'?'ok':'wait'),
         `${fmt.format(executed)} / ${fmt.format(o.qty)}<br><small>Limite indicative ${fc(o.limit)}</small>`,
         `<div class="actions">${['TRANSMIS','PARTIELLEMENT EXÉCUTÉ'].includes(o.status)?btn('order-fill','Saisir l’avis',o.id,'primary'):''}
         ${(actions[o.status]||[]).map(([status,label])=>btn('order-state',label,o.id+'|'+status)).join('')}
         ${btn('order-trace','Voir le suivi',o.id)}</div>`];
     });
-    return `<div class="context compact"><p class="quiet">La transmission se fait auprès de la SGI. Les avis réellement reçus alimentent le journal local.</p><div class="actions">${btn('new-order','Créer un ordre manuel','','primary')}${go('invest','Simuler')}</div></div>
+    return `<div class="context compact"><p class="quiet">Aucune transmission automatique à la SGI. Une opération réelle est comptabilisée seulement sur justificatif.</p><div class="actions">${btn('new-order','Créer un ordre achat / vente','','primary')}${btn('trade-buy','Achat exécuté')}${btn('trade-sell','Vente exécutée')}${go('invest','Répartir un achat')}</div></div>
       ${pane('Ordres et rapprochement',table(['Titre / compte','État','Rapproché / demandé','Actions'],rows))}
       ${pane('Scénarios enregistrés',table(['Date','Mode','Versements prévus'],db.plans.slice().reverse().map(p=>
         [showDate(p.date||p.createdDate),esc(p.mode||'—'),fc(Object.values(p.forecast||p.funding||{}).filter(v=>typeof v==='number').reduce((n,v)=>n+v,0))]))) }`;
@@ -271,10 +331,11 @@
         ${field('exchangeDate','Date du change',input('exchangeDate',F.today(),'date','required'))}
         ${field('exchangeSource','Référence du bordereau de change',input('exchangeSource','','text','required maxlength="200"'))}
       </div>
-      <div class="fields" data-types="BUY SELL BONUS RIGHTS STOCK_DIVIDEND RIGHTS_EXPIRY">${field('qty','Quantité réelle',input('qty','','number','required step="any" min="0.000001"'))}</div>
+      <div class="fields" data-types="BUY SELL BONUS RIGHTS STOCK_DIVIDEND RIGHTS_EXPIRY">${field('qty','Quantité réelle',input('qty',preset.qty??'','number','required step="any" min="0.000001"'))}</div>
       <div class="fields" data-types="BUY SELL">${field('price','Prix unitaire réel (FCFA)',money('price'))}${field('broker','Courtage réel (FCFA)',money('broker',0))}
       ${field('actualTotal','Total débité / crédité sur avis (FCFA)',money('actualTotal'))}</div>
       <div class="fields" data-types="BUY SELL DIVIDEND">${field('other','Autres frais (FCFA)',money('other',0))}${field('tax','Impôts / retenue (FCFA)',money('tax',0))}</div>
+      <div class="trade-preview" data-types="BUY SELL"><span>Montant calculé selon les frais saisis</span><strong data-trade-total>—</strong><small data-fee-hint>Renseignez le nombre d'actions et le cours.</small><small>Vérifiez chaque commission et le total réel sur l’avis. Courtage plafonné à 1 % du brut.</small></div>
       <div class="fields" data-types="DIVIDEND">${field('gross','Brut reçu (FCFA)',money('gross',preset.gross??''))}
       <label class="check"><input name="cashDistribution" type="checkbox"> FCP · distribution effectivement créditée hors VL</label>
       <p class="quiet">Contrôle par action facultatif : renseignez les trois champs pour vérifier la quantité éligible avant/après fractionnement.</p>
@@ -306,6 +367,7 @@
     }
     tx.dataset.type=type; tx.dataset.account=a;
     transactionFields(tx);
+    tradePreview(tx);
   }
   function transactionFields(form) {
     const type=form.elements.type.value;
@@ -326,6 +388,18 @@
     const dest=findAccount(form.elements.toAccountId.value), exchange=form.querySelector('[data-fx-transfer]');
     exchange.hidden=!(type==='TRANSFER'&&account&&dest&&account.currency!==dest.currency);
     exchange.querySelectorAll('input').forEach(el=>el.disabled=exchange.hidden);
+  }
+  function tradePreview(form) {
+    const type=form.elements.type?.value||form.dataset.type;
+    if(!['BUY','SELL'].includes(type)) return;
+    const qty=Number(form.elements.qty?.value)||0, price=Number(form.elements.price?.value)||0;
+    const broker=Number(form.elements.broker?.value)||0;
+    const other=Number(form.elements.other?.value)||0, tax=Number(form.elements.tax?.value)||0;
+    const gross=qty*price, net=type==='BUY'?gross+broker+other+tax:gross-broker-other-tax;
+    const output=form.querySelector('[data-trade-total]');
+    if(output) output.textContent=qty>0&&price>0?fc(net)+' · '+(type==='BUY'?'débit':'crédit'):'Renseignez quantité, cours et frais.';
+    const a=findAccount(form.elements.accountId?.value), hint=form.querySelector('[data-fee-hint]');
+    if(hint) hint.textContent=qty>0&&price>0&&a?'Barème indicatif de ce compte : courtage '+pct(a.brokerRate)+' (~'+fc(Math.floor(gross*a.brokerRate*100)/100)+'), autres frais '+pct(a.otherRate)+' (~'+fc(Math.floor(gross*a.otherRate*100)/100)+'). Seul le bordereau fait foi.':'Renseignez quantité et cours pour afficher le barème indicatif du compte.';
   }
   function eventsView() {
     const eventRows=db.events.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(e=>[
@@ -405,20 +479,17 @@
   }
   function historyView() {
     const p=getPortfolio();
-    const monthly=p?p.accounts.reduce((n,a)=>n+a.monthly,0):250000;
-    const monthlyInput=projectInputs.monthly??monthly;
     const perf=p?A.performance(db,p.id):{twr:null,xirr:null,gain:null,observations:[]};
     const txs=db.transactions.filter(t=>!historyMonth||t.date.startsWith(historyMonth)).slice().reverse();
-    const scenarios=[['Prudent',-.05],['Stable',0],['Favorable',.05]].map(([label,r])=>[label,r,A.project(p?.total||0,monthlyInput,r,projectInputs.dividend,projectInputs.fee)]);
-    return `<div class="context compact">${p?portfolioPicker():''}<div class="actions">${btn('transaction','Saisir une opération','','primary')}${btn('export-journal','Exporter le journal CSV')}${db.asOf&&db.accounts.length?btn('opening-proof','Rapprocher une archive')+btn('opening-revise','Corriger la photographie'):''}</div></div>
+    return `<div class="context compact">${p?portfolioPicker():''}<div class="actions">${btn('trade-buy','Acheter','','primary')+btn('trade-sell','Vendre')+btn('dividend-received','Dividende')}${btn('export-journal','Exporter le journal CSV')}${db.asOf&&db.accounts.length?btn('opening-proof','Rapprocher une archive')+btn('opening-revise','Corriger la photographie'):''}</div></div>
       <div class="split">${pane('Performance observée',`<div class="mini-kpis">${kpi('TWR',pct(perf.twr))}${kpi('XIRR annualisé',pct(perf.xirr))}${kpi('Gain net des apports',perf.gain===null?'—':fc(perf.gain))}</div>
         <p class="quiet">TWR calculé sur des intervalles valorisés sans flux. XIRR utilise les flux datés et exige une solution identifiable. Les tirets signalent des observations insuffisantes.</p>`+
         curve(perf.observations.filter(o=>o.complete)))}
-      ${pane('Projection à cinq ans',form('projection',`<div class="fields">${field('monthly','Versement mensuel',money('monthly',monthlyInput))}
-        ${field('fee','Frais d’achat (%)',input('fee',Math.round(projectInputs.fee*10000)/100,'number','min="0" max="10" step="0.01" required'))}
-        ${field('dividend','Dividende net réinvesti (%)',input('dividend',Math.round(projectInputs.dividend*10000)/100,'number','min="0" max="30" step="0.01" required'))}</div>`,'Recalculer')+
-        table(['Hypothèse prix annuelle','Année 1','Année 3','Année 5'],scenarios.map(([name,r,pr])=>[name+' · '+pct(r),fc(pr.values[1]),fc(pr.values[3]),fc(pr.values[5])]))+
-        `<p class="quiet">Hypothèses, dividendes nets réinvestis à ${pct(projectInputs.dividend)} par an. Apports prévus ${fc(monthlyInput*60)}, frais sur apports ${fc(monthlyInput*60*projectInputs.fee)} sur cinq ans.</p>`)}</div>
+      ${pane('Situation financière',p?table(['Indicateur','Montant'],[
+        ['Actions valorisées',fc(p.market)],['Espèces disponibles',fc(p.available)],
+        ['Frais et taxes enregistrés',fc(p.feesPaid+p.taxes)],
+        ['Plus-value réalisée sur ventes',fc(p.realized)],['Dividendes nets encaissés',fc(p.dividends)]
+      ]):empty('Aucun portefeuille sélectionné'))}</div>
       ${pane('Journal des écritures locales',`<div class="context compact">${field('month','Filtrer par mois',input('month',historyMonth,'month','id="history-month"'))}<span class="quiet">${txs.length} écritures</span></div>`+
         table(['Date','Compte','Opération','Montant','Référence','Actions'],txs.slice(0,journalLimit).map(journalRow))+
         (txs.length>journalLimit?`<div class="actions">${btn('history-more','Afficher 40 écritures de plus')}</div>`:''))}
@@ -463,7 +534,7 @@
     $('#page-title').textContent=pages[tab][0];
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
     $('#quote-date').textContent=last?'Dernière cote · '+showDate(last):'Aucun cours chargé';
-    $('#view').innerHTML=(V.backupDue(db)?'<section class="pane" role="alert"><h2>Sauvegarde JSON mensuelle obligatoire</h2><p>La consultation reste disponible, mais les nouvelles opérations sont suspendues jusqu’à la vérification de la sauvegarde du mois.</p>'+btn('monthly-backup','Télécharger et vérifier le ZIP','','primary')+'</section>':'')+
+    $('#view').innerHTML=(V.backupDue(db)?'<section class="backup-banner" role="status"><span><strong>Sauvegarde du mois requise.</strong> Les modifications restent verrouillées.</span>'+btn('monthly-backup','Sauvegarder et vérifier','','primary')+'</section>':'')+
       {dashboard,accounts:accountsView,invest:investment,orders:ordersView,events:eventsView,
       history:historyView,settings:settingsView,data:dataView}[tab]();
   }
@@ -606,6 +677,12 @@
           break;
         case 'entity': entityForm(...id.split('|')); break;
         case 'transaction': transaction(id||'DEPOSIT'); break;
+        case 'trade-buy': transaction('BUY');break;
+        case 'trade-sell': transaction('SELL');break;
+        case 'dividend-received': transaction('DIVIDEND');break;
+        case 'sell-position': {const [accountId,symbol]=id.split('|');const qty=calc.accounts.find(a=>a.id===accountId)?.positions[symbol]?.qty||0;transaction('SELL',{accountId,symbol,qty});break;}
+        case 'corporate-action': modal('Opérations sur titres',`<p class="quiet">Sélectionnez l’opération indiquée sur votre avis de SGI. Le fractionnement conserve le coût de revient et ajuste la quantité.</p><div class="action-choices">${[['SPLIT','Fractionnement / regroupement'],['BONUS','Actions gratuites'],['RIGHTS','Attribution de droits'],['STOCK_DIVIDEND','Dividende en actions'],['RIGHTS_EXPIRY','Expiration des droits']].map(([type,label])=>btn('corporate-type',label,type)).join('')}</div>`);break;
+        case 'corporate-type': transaction(id);break;
         case 'reinvest': {const t=db.transactions.find(x=>x.id===id);transaction('BUY',{accountId:t.accountId,reinvests:id});break;}
         case 'opening-revise':
           modal('Corriger la photographie d’ouverture',form('opening-revise',
@@ -644,9 +721,11 @@
         }
         case 'new-order':
           if(!activeAccounts().length) throw Error('Ajouter un compte actif.');
-          modal('Créer un ordre à transmettre',form('new-order',field('accountId','Compte',select('accountId',accountsOptions(activeAccounts())))+
+          modal('Ordre manuel · achat ou vente',form('new-order',field('side','Nature',select('side',[['BUY','Acheter'],['SELL','Vendre']],'BUY'))+
+            field('accountId','Compte',select('accountId',accountsOptions(activeAccounts().filter(a=>a.currency==='XOF'))))+
             field('symbol','Titre',symInput())+field('qty','Actions entières',integer('qty'))+
-            field('price','Limite indicative',money('price')),'Enregistrer le projet'));break;
+            field('price','Limite indicative (FCFA)',money('price'))+
+            '<p class="quiet">Un projet ne touche ni aux espèces ni aux titres. Une vente requiert des actions réellement détenues ; les frais réels sont enregistrés à réception de l’avis.</p>','Enregistrer le projet'));break;
         case 'order-state': {
           const [o,status]=id.split('|');
           modal(status,form('order-state',field('reference','Référence / note de contrôle',input('reference','','text','required minlength="4" maxlength="180"')),
@@ -654,7 +733,7 @@
         }
         case 'order-fill': {
           const o=db.orders.find(x=>x.id===id);
-          transaction('BUY',{accountId:o.accountId,orderId:id,symbol:o.symbol});break;
+          transaction(o.side||'BUY',{accountId:o.accountId,orderId:id,symbol:o.symbol});break;
         }
         case 'order-trace': {
           const o=db.orders.find(x=>x.id===id);
@@ -745,8 +824,7 @@
           a.label=trim(f,'label');
           const broker=institution(a.institutionId)||'';
           const newSgi=next.institutions.find(x=>x.id===a.institutionId)?.label||broker;
-          const hasMonthly=next.accounts.some(x=>x.id!==a.id&&x.portfolioId===a.portfolioId&&x.institutionId===a.institutionId);
-          a.monthly=a.currency!=='XOF'?0:trim(f,'monthly')?number(f,'monthly'):hasMonthly?0:{FGI:100000,CGF:150000}[newSgi.toUpperCase()]||0;
+          a.monthly=0; // Aucune mensualité : tout investissement est ponctuel.
           a.brokerRate=number(f,'broker')/100; a.otherRate=number(f,'other')/100;
           a.archived=f.has('archived');
           portfolioId=a.portfolioId;
@@ -771,10 +849,9 @@
         }
         case 'invest': {
           const accountIds=f.getAll('accounts');
-          planInputs={mode:f.get('mode'),budget:number(f,'budget'),accountIds,exceptional:f.has('exceptional'),verifiedOnly:f.has('verifiedOnly'),
-            manual:Object.fromEntries(accountIds.map(id=>[id,number(f,'manual_'+id)]))};
+          planInputs={mode:'cibles',budget:number(f,'budget'),accountIds,exceptional:true,verifiedOnly:f.has('verifiedOnly')};
           plan=F.propose(db,{portfolioId,...planInputs});
-          comparison=accountIds.length===2?F.propose(db,{portfolioId,...planInputs,mode:plan.mode==='mensuel'?'equilibre':'mensuel'}):null;
+          comparison=null;
           render();return;
         }
         case 'opening-revise': {
@@ -826,7 +903,10 @@
           if(F.isFund(db,s)) throw Error('Saisir la souscription FCP confirmée dans Dividendes et FCP.');
           const a=findAccount(accountId);
           if(!a||!F.symbol(s)||!Number.isSafeInteger(qty)||!qty||price<=0) throw Error('Ordre invalide.');
-          next=F.createPlan(db,{portfolioId:a.portfolioId,mode:'manuel',funding:{[accountId]:0},lines:[{accountId,symbol:s,qty,price,estimateRate:a.brokerRate+a.otherRate}]});
+          const side=f.get('side');if(!['BUY','SELL'].includes(side)) throw Error('Type d’ordre inconnu.');
+          if(side==='SELL') {const held=calc.accounts.find(x=>x.id===accountId)?.positions[s]?.qty||0;
+            if(qty>held) throw Error('Vente supérieure aux actions détenues.');}
+          next=F.createPlan(db,{portfolioId:a.portfolioId,mode:'manuel',funding:{[accountId]:0},lines:[{accountId,symbol:s,qty,price,side,estimateRate:a.brokerRate+a.otherRate}]});
           break;
         }
         case 'save-plan':
@@ -875,8 +955,6 @@
           break;
         case 'stale':
           next=structuredClone(db);next.settings.staleDays=number(f,'days');next.settings.autoQuotes=f.has('autoQuotes');break;
-        case 'projection':
-          projectInputs={monthly:number(f,'monthly'),fee:number(f,'fee')/100,dividend:number(f,'dividend')/100};render();return;
         case 'quotes-import': {
           const r=F.quoteUpdates(db,Q.parseManual(quoteOptions,{source:trim(f,'source'),official:f.has('official'),retrievedOn:F.today()}));
           next=r.next;message=r.count+' cotations acceptées.';break;
@@ -926,7 +1004,7 @@
           localChannel?.postMessage('reset');
           try {localStorage.setItem(resetKey,String(reset.revision));localStorage.removeItem(resetKey);} catch {}
           close();portfolioId='';accountFilter='';historyMonth='';journalLimit=40;archiveLimit=40;
-          plan=null;comparison=null;planInputs=null;projectInputs={monthly:null,fee:.016,dividend:.03};
+          plan=null;comparison=null;planInputs=null;
           await load(reset);goTo('dashboard');notify('Données de cette installation effacées.');
           if(f.has('older')) await V.removeLegacy();
           return;
@@ -944,6 +1022,10 @@
     } catch(err) {showError(err);}
     finally {busy=false;}
   });
+  document.addEventListener('input',e=>{
+    const form=e.target.closest('form[data-form=tx]');
+    if(form && ['qty','price','broker','other','tax'].includes(e.target.name)) tradePreview(form);
+  });
   document.addEventListener('change',e=>{
     const el=e.target;
     if(!db) return;
@@ -952,10 +1034,10 @@
       options.hidden=el.value!=='manuel';
       if(!options.hidden) options.closest('details').open=true;
     }
-    if(el.matches('#portfolio')) {portfolioId=el.value;accountFilter='';plan=null;comparison=null;planInputs=null;projectInputs.monthly=null;render();$('#portfolio')?.focus();}
+    if(el.matches('#portfolio')) {portfolioId=el.value;accountFilter='';plan=null;comparison=null;planInputs=null;render();$('#portfolio')?.focus();}
     if(el.matches('#account-filter')) {accountFilter=el.value;render();$('#account-filter')?.focus();}
     if(el.matches('#history-month')) {historyMonth=el.value;journalLimit=40;render();$('#history-month')?.focus();}
-    if(el.closest('form[data-form=tx]') && ['type','accountId','toAccountId'].includes(el.name)) transactionFields(el.form);
+    if(el.closest('form[data-form=tx]') && ['type','accountId','toAccountId'].includes(el.name)) {transactionFields(el.form);tradePreview(el.form);}
     if(el.id==='backup-verify') {
       const file=el.files?.[0];el.value='';
       if(file) void verifyMonthlyBackup(file).catch(showError);
