@@ -12,7 +12,7 @@ import zipfile
 from build import shell
 
 ALLOWED = re.compile(
-    r'(?:\.(?:gitignore|nojekyll)|\.github/workflows/ci\.yml|'
+    r'(?:\.(?:gitignore|nojekyll)|\.github/workflows/(?:ci|pages)\.yml|'
     r'(?:README|CHANGELOG|PRIVACY_DEPLOYMENT_WARNING)\.md|DEPLOIEMENT\.txt|'
     r'(?:index\.html|style\.css|manifest\.webmanifest|package\.json)|'
     r'(?:app|sw|finance|engine|analysis|quotes|vault)\.js|'
