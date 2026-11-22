@@ -31,10 +31,12 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
-      - name: Préparer Android API 35 sans paquet SDK obsolète
-        run: |
-          echo "ANDROID_HOME=${ANDROID_HOME:-/usr/local/lib/android/sdk}" >> "$GITHUB_ENV"
-          "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/16.0/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0"
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: 'false'
+      - name: Préparer Android API 35
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
       - name: Régression financière et confidentialité historique
         run: |
           python scripts/privacy_check.py
