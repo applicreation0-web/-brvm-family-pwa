@@ -1,0 +1,21 @@
+# NE JAMAIS transmettre ses données à GitHub.
+*.json
+!package.json
+!market/feed.json
+*PRIVE*.json
+*PRIVEE*.json
+*SAUVEGARDE*.json
+*PERSONNEL*.json
+*personnel*.json
+*private*.json
+my-data/
+private-data/
+private/
+*.xlsx
+*.xlsm
+*.pdf
+*.zip
+.DS_Store
+__pycache__/
+node_modules/
+dist/

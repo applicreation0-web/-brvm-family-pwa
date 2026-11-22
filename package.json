@@ -1,0 +1,1 @@
+{"name":"brvm-family-pwa","private":true,"version":"3.0.0-qualification.1","description":"PWA BRVM locale avec cotations importables localement et aucune donnée financière hébergée","scripts":{"test":"node --test tests/*.test.js","serve":"python -m http.server 8787 --directory dist","build":"python scripts/build.py"},"license":"UNLICENSED"}

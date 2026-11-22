@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#101217">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; object-src 'none'; form-action 'none'">
+<title>BRVM Family</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+<script defer src="engine.js"></script>
+<script defer src="finance.js"></script>
+<script defer src="vault.js"></script>
+<script defer src="quotes.js"></script>
+<script defer src="analysis.js"></script>
+<script defer src="app.js"></script>
+</head>
+<body>
+<a class="skip" href="#view">Aller au contenu</a>
+<aside class="rail">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span><b>BRVM Family</b></div>
+  <nav id="nav" aria-label="Navigation principale"></nav>
+  <div class="local"><i></i> Suivi local · XOF</div>
+</aside>
+<main>
+  <header class="top">
+    <div><button id="menu" class="secondary" type="button" aria-expanded="false" aria-controls="nav">Menu</button><p id="section-label">Portefeuille</p><h1 id="page-title">Vue d’ensemble</h1></div>
+    <div class="toolbar"><button id="install-app" class="secondary" type="button" hidden>Installer BRVM</button><span id="quote-date" class="quiet"></span><button class="secondary" data-action="refresh">Actualiser les cours</button></div>
+  </header>
+  <p id="update-tip" class="alert" hidden>Une mise à jour est prête. Enregistrez vos saisies, fermez tous les onglets et fenêtres BRVM, puis rouvrez l’application.</p>
+  <div id="flash" role="status" aria-live="polite" hidden></div>
+  <section id="view" tabindex="-1"><p>Ouverture des données locales…</p></section>
+</main>
+<dialog id="modal" aria-labelledby="modal-title"></dialog>
+<input id="import" type="file" accept=".json,application/json" hidden>
+<input id="quote-import" type="file" accept=".csv,.json,text/csv,application/json" hidden>
+</body>
+</html>

@@ -1,7 +1,9 @@
-# BRVM Family
+# BRVM Family V3
 
-Application PWA générique de suivi BRVM, sans compte ni donnée personnelle incluse.
+PWA générique de suivi financier BRVM. **Aucune donnée personnelle ni aucun compte préchargé.** Les portefeuilles s'importent par JSON volontaire dans le navigateur.
 
-**État : préproduction — la mise à jour automatique des cours et les vérifications sur appareils réels ne sont pas qualifiées.**
+**État : préproduction fonctionnelle.** Le flux de cotations automatiques reste désactivé; l'import de cotations CSV/JSON et la saisie manuelle sont disponibles. Les essais physiques Android et les autorisations de marché restent à valider avant la version officielle.
 
-Les données de portefeuille sont importées volontairement et conservées dans le navigateur. Ne publiez jamais vos fichiers personnels dans ce dépôt.
+Ce dépôt public ne doit jamais contenir de sauvegardes privées. Code source consultable sans licence de réutilisation accordée (UNLICENSED).
+
+Commandes : `npm test`, `python -m unittest discover -s tests`, `python scripts/build.py dist`. Déployer seulement `dist/`.
