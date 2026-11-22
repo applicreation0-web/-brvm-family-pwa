@@ -209,9 +209,11 @@
       ${kpi('Plus-value latente',fc(p.pnl),p.unknown?'Positions cotées uniquement':`Coût réel des titres · ${fc(p.cost)}`,p.pnl<0?'loss':'gain')}
       ${kpi('Dividendes nets reçus',fc(p.dividends),`${fc(p.grossDividends)} bruts depuis l’ouverture`)}</div>
       ${coreProgress(p)}
-      <div class="split">${pane('Évolution enregistrée',curve(points),'Séances avec cotations et taux documentés')}${pane('Répartition par SGI',bars(calc.institutions.map(i=>({label:i.label,value:p.accounts.filter(a=>a.institutionId===i.id).reduce((n,a)=>n+(a.totalXof??0),0)}))))}</div>
+      ${points.length>1?pane('Évolution du patrimoine',curve(points),'Valeurs historiques validées et comparables'):''}
+      <details class="dashboard-advanced"><summary>Voir le détail des comptes et des analyses</summary>
+      <div class="split">${pane('Répartition par SGI',bars(calc.institutions.map(i=>({label:i.label,value:p.accounts.filter(a=>a.institutionId===i.id).reduce((n,a)=>n+(a.totalXof??0),0)}))))}
       <div class="split">${pane('Suivi depuis l’ouverture',table(['Indicateur','Valeur'],[['Frais et taxes comptabilisés',fc(p.feesPaid+p.taxes)],['Gains réalisés',fc(p.realized)],['Apports nets',fc(p.netContribution)],['Ordres à suivre',orderCount],['Cours absents ou anciens',old],['Cours disponibles',quotes.length]])+`<div class="actions">${go('orders','Consulter les ordres')}</div>`)}</div>
-      ${pane('Comptes familiaux',table(['Compte','Titres','Cash disponible','Patrimoine'],calc.accounts.map(a=>[esc(accName(a.id)),fc(a.market),amountIn(a.available,a.currency),a.totalXof==null?'Taux absent':fc(a.totalXof)]))) }`;
+      ${pane('Comptes familiaux',table(['Compte','Titres','Cash disponible','Patrimoine'],calc.accounts.map(a=>[esc(accName(a.id)),fc(a.market),amountIn(a.available,a.currency),a.totalXof==null?'Taux absent':fc(a.totalXof)]))) }</details>`;
   }
   function accountsView() {
     const p=getPortfolio();
