@@ -152,6 +152,11 @@ def check(first, second):
         expect(page.locator('article h2').filter(has_text='Compte fictif E2E')).to_be_visible()
         expect(page.get_by_text('6', exact=True).first).to_be_visible()
         page.locator('#nav [data-page=dashboard]').press('Enter')
+        # Capture fictive : aucune information personnelle n'est importée dans cette recette.
+        page.set_viewport_size({'width':390,'height':850})
+        shots=ROOT / 'test_artifacts'
+        shots.mkdir(exist_ok=True)
+        page.screenshot(path=str(shots / 'dashboard_fictif_android_390px.png'),full_page=True)
         total=page.locator('.total').text_content()
         page.evaluate('navigator.serviceWorker.ready.then(() => true)')
         for width in (360, 412, 768, 1366):
