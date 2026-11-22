@@ -164,7 +164,7 @@
       const coreWeight=E.symbols.includes(x.symbol)&&core>0?(holdings.get(x.symbol)||0)/core:null;
       const target=E.symbols.includes(x.symbol)?p.targets[x.symbol]:null;
       return `<li><span class="allocation-name"><i style="background:${col[i%col.length]}" aria-hidden="true"></i><b>${esc(x.symbol)}</b><small>${esc(E.names[x.symbol]||'')}</small></span>
-        <span class="allocation-value"><strong>${pct(actual)}</strong><small>${fc(x.value)}</small>${target!=null?'<small>CORE : '+pct(coreWeight)+' / cible '+pct(target)+'</small>':''}</span></li>`;
+        <span class="allocation-value"><strong>${pct(actual)}</strong><small>${fc(x.value)}</small>${db.quotes[x.symbol]?'<small>Cours '+showDate(db.quotes[x.symbol].date)+(F.stale(db.quotes[x.symbol],db.settings.staleDays)?' · ancien':'')+'</small>':''}${target!=null?'<small>CORE : '+pct(coreWeight)+' / cible '+pct(target)+'</small>':''}</span></li>`;
     }).join('');
     const warning=missing||missingFx?`<p class="quiet" role="status">Répartition partielle : ${missing} titre(s) sans cours et ${missingFx} compte(s) sans conversion. Aucun montant inconnu n'est valorisé à zéro.</p>`:'';
     return `<article class="pane allocation"><div class="pane-head"><h2>Répartition réelle · ${esc(p.label)}</h2><p>Sur les actifs valorisés, espèces comprises · ${fc(total)}</p></div>
@@ -335,7 +335,7 @@
       <div class="fields" data-types="BUY SELL">${field('price','Prix unitaire réel (FCFA)',money('price'))}${field('broker','Courtage réel (FCFA)',money('broker',0))}
       ${field('actualTotal','Total débité / crédité sur avis (FCFA)',money('actualTotal'))}</div>
       <div class="fields" data-types="BUY SELL DIVIDEND">${field('other','Autres frais (FCFA)',money('other',0))}${field('tax','Impôts / retenue (FCFA)',money('tax',0))}</div>
-      <div class="trade-preview" data-types="BUY SELL"><span>Montant estimé selon les valeurs saisies</span><strong data-trade-total>—</strong><small>Courtage plafonné à 1 % du brut. Le total sur l’avis doit correspondre exactement, frais et taxes inclus.</small></div>
+      <div class="trade-preview" data-types="BUY SELL"><span>Montant calculé selon les frais saisis</span><strong data-trade-total>—</strong><small data-fee-hint>Renseignez le nombre d'actions et le cours.</small><small>Vérifiez chaque commission et le total réel sur l’avis. Courtage plafonné à 1 % du brut.</small></div>
       <div class="fields" data-types="DIVIDEND">${field('gross','Brut reçu (FCFA)',money('gross',preset.gross??''))}
       <label class="check"><input name="cashDistribution" type="checkbox"> FCP · distribution effectivement créditée hors VL</label>
       <p class="quiet">Contrôle par action facultatif : renseignez les trois champs pour vérifier la quantité éligible avant/après fractionnement.</p>
@@ -398,6 +398,8 @@
     const gross=qty*price, net=type==='BUY'?gross+broker+other+tax:gross-broker-other-tax;
     const output=form.querySelector('[data-trade-total]');
     if(output) output.textContent=qty>0&&price>0?fc(net)+' · '+(type==='BUY'?'débit':'crédit'):'Renseignez quantité, cours et frais.';
+    const a=findAccount(form.elements.accountId?.value), hint=form.querySelector('[data-fee-hint]');
+    if(hint) hint.textContent=qty>0&&price>0&&a?'Barème indicatif de ce compte : courtage '+pct(a.brokerRate)+' (~'+fc(Math.floor(gross*a.brokerRate*100)/100)+'), autres frais '+pct(a.otherRate)+' (~'+fc(Math.floor(gross*a.otherRate*100)/100)+'). Seul le bordereau fait foi.':'Renseignez quantité et cours pour afficher le barème indicatif du compte.';
   }
   function eventsView() {
     const eventRows=db.events.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(e=>[
