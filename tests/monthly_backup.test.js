@@ -59,7 +59,9 @@ test('sauvegarde ZIP: complet + exactement un JSON par compte et un manifeste',a
   const imported=V.readZip(pack.bytes);
   assert.equal(imported.size,files.size);
   assert.deepEqual(JSON.parse(imported.get('BRVM_COMPLET.json')),d);
-  const tampered=pack.bytes.slice();tampered[40]^=1;
+  const tampered=pack.bytes.slice();
+  const firstNameLength=new DataView(tampered.buffer).getUint16(26,true);
+  tampered[30+firstNameLength+12]^=1; // alter JSON bytes, not its filename
   assert.throws(()=>V.readZip(tampered),/CRC32/);
   assert.equal(files.size,5);
   assert.equal(files.get('MANIFESTE.json').accountCount,3);
