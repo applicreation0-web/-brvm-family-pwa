@@ -98,7 +98,7 @@ def check(first, second):
         confirm_import(other, initialize=True)
         expect(other.locator('.total')).to_have_text(total)
         other.locator('#nav [data-page=accounts]').press('Enter')
-        expect(other.get_by_text('Compte fictif E2E', exact=False).first).to_be_visible()
+        expect(other.locator('article h2').filter(has_text='Compte fictif E2E')).to_be_visible()
         page.goto(first + '/')
         page.wait_for_function('Boolean(navigator.serviceWorker.controller)')
         context.set_offline(True)
