@@ -299,13 +299,13 @@
       const actions={PROJET:[['TRANSMIS','Marquer transmis'],['ANNULÉ','Annuler'],['NON EXÉCUTÉ','Non exécuté']],
         TRANSMIS:[['ANNULÉ','Annuler'],['NON EXÉCUTÉ','Non exécuté']],
         'PARTIELLEMENT EXÉCUTÉ':[['ANNULÉ','Annuler le reliquat']], 'EXÉCUTÉ':[['RAPPROCHÉ','Rapprocher']]};
-      return [`<b>${esc(o.symbol)}</b><br><small>${esc(accName(o.accountId))}</small>`,tag(o.status,o.status==='RAPPROCHÉ'?'ok':'wait'),
+      return [`<b>${o.side==='SELL'?'Vente':'Achat'} · ${esc(o.symbol)}</b><br><small>${esc(accName(o.accountId))}</small>`,tag(o.status,o.status==='RAPPROCHÉ'?'ok':'wait'),
         `${fmt.format(executed)} / ${fmt.format(o.qty)}<br><small>Limite indicative ${fc(o.limit)}</small>`,
         `<div class="actions">${['TRANSMIS','PARTIELLEMENT EXÉCUTÉ'].includes(o.status)?btn('order-fill','Saisir l’avis',o.id,'primary'):''}
         ${(actions[o.status]||[]).map(([status,label])=>btn('order-state',label,o.id+'|'+status)).join('')}
         ${btn('order-trace','Voir le suivi',o.id)}</div>`];
     });
-    return `<div class="context compact"><p class="quiet">La transmission se fait auprès de la SGI. Les avis réellement reçus alimentent le journal local.</p><div class="actions">${btn('new-order','Créer un ordre manuel','','primary')}${go('invest','Simuler')}</div></div>
+    return `<div class="context compact"><p class="quiet">Aucune transmission automatique à la SGI. Une opération réelle est comptabilisée seulement sur justificatif.</p><div class="actions">${btn('new-order','Créer un ordre achat / vente','','primary')}${btn('trade-buy','Achat exécuté')}${btn('trade-sell','Vente exécutée')}${go('invest','Répartir un achat')}</div></div>
       ${pane('Ordres et rapprochement',table(['Titre / compte','État','Rapproché / demandé','Actions'],rows))}
       ${pane('Scénarios enregistrés',table(['Date','Mode','Versements prévus'],db.plans.slice().reverse().map(p=>
         [showDate(p.date||p.createdDate),esc(p.mode||'—'),fc(Object.values(p.forecast||p.funding||{}).filter(v=>typeof v==='number').reduce((n,v)=>n+v,0))]))) }`;
@@ -329,10 +329,11 @@
         ${field('exchangeDate','Date du change',input('exchangeDate',F.today(),'date','required'))}
         ${field('exchangeSource','Référence du bordereau de change',input('exchangeSource','','text','required maxlength="200"'))}
       </div>
-      <div class="fields" data-types="BUY SELL BONUS RIGHTS STOCK_DIVIDEND RIGHTS_EXPIRY">${field('qty','Quantité réelle',input('qty','','number','required step="any" min="0.000001"'))}</div>
+      <div class="fields" data-types="BUY SELL BONUS RIGHTS STOCK_DIVIDEND RIGHTS_EXPIRY">${field('qty','Quantité réelle',input('qty',preset.qty??'','number','required step="any" min="0.000001"'))}</div>
       <div class="fields" data-types="BUY SELL">${field('price','Prix unitaire réel (FCFA)',money('price'))}${field('broker','Courtage réel (FCFA)',money('broker',0))}
       ${field('actualTotal','Total débité / crédité sur avis (FCFA)',money('actualTotal'))}</div>
       <div class="fields" data-types="BUY SELL DIVIDEND">${field('other','Autres frais (FCFA)',money('other',0))}${field('tax','Impôts / retenue (FCFA)',money('tax',0))}</div>
+      <div class="trade-preview" data-types="BUY SELL"><span>Montant estimé selon les valeurs saisies</span><strong data-trade-total>—</strong><small>Courtage plafonné à 1 % du brut. Le total sur l’avis doit correspondre exactement, frais et taxes inclus.</small></div>
       <div class="fields" data-types="DIVIDEND">${field('gross','Brut reçu (FCFA)',money('gross',preset.gross??''))}
       <label class="check"><input name="cashDistribution" type="checkbox"> FCP · distribution effectivement créditée hors VL</label>
       <p class="quiet">Contrôle par action facultatif : renseignez les trois champs pour vérifier la quantité éligible avant/après fractionnement.</p>
@@ -364,6 +365,7 @@
     }
     tx.dataset.type=type; tx.dataset.account=a;
     transactionFields(tx);
+    tradePreview(tx);
   }
   function transactionFields(form) {
     const type=form.elements.type.value;
@@ -384,6 +386,16 @@
     const dest=findAccount(form.elements.toAccountId.value), exchange=form.querySelector('[data-fx-transfer]');
     exchange.hidden=!(type==='TRANSFER'&&account&&dest&&account.currency!==dest.currency);
     exchange.querySelectorAll('input').forEach(el=>el.disabled=exchange.hidden);
+  }
+  function tradePreview(form) {
+    const type=form.elements.type?.value||form.dataset.type;
+    if(!['BUY','SELL'].includes(type)) return;
+    const qty=Number(form.elements.qty?.value)||0, price=Number(form.elements.price?.value)||0;
+    const broker=Number(form.elements.broker?.value)||0;
+    const other=Number(form.elements.other?.value)||0, tax=Number(form.elements.tax?.value)||0;
+    const gross=qty*price, net=type==='BUY'?gross+broker+other+tax:gross-broker-other-tax;
+    const output=form.querySelector('[data-trade-total]');
+    if(output) output.textContent=qty>0&&price>0?fc(net)+' · '+(type==='BUY'?'débit':'crédit'):'Renseignez quantité, cours et frais.';
   }
   function eventsView() {
     const eventRows=db.events.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(e=>[
@@ -661,6 +673,12 @@
           break;
         case 'entity': entityForm(...id.split('|')); break;
         case 'transaction': transaction(id||'DEPOSIT'); break;
+        case 'trade-buy': transaction('BUY');break;
+        case 'trade-sell': transaction('SELL');break;
+        case 'dividend-received': transaction('DIVIDEND');break;
+        case 'sell-position': {const [accountId,symbol]=id.split('|');const qty=calc.accounts.find(a=>a.id===accountId)?.positions[symbol]?.qty||0;transaction('SELL',{accountId,symbol,qty});break;}
+        case 'corporate-action': modal('Opérations sur titres',`<p class="quiet">Sélectionnez l’opération indiquée sur votre avis de SGI. Le fractionnement conserve le coût de revient et ajuste la quantité.</p><div class="action-choices">${[['SPLIT','Fractionnement / regroupement'],['BONUS','Actions gratuites'],['RIGHTS','Attribution de droits'],['STOCK_DIVIDEND','Dividende en actions'],['RIGHTS_EXPIRY','Expiration des droits']].map(([type,label])=>btn('corporate-type',label,type)).join('')}</div>`);break;
+        case 'corporate-type': transaction(id);break;
         case 'reinvest': {const t=db.transactions.find(x=>x.id===id);transaction('BUY',{accountId:t.accountId,reinvests:id});break;}
         case 'opening-revise':
           modal('Corriger la photographie d’ouverture',form('opening-revise',
@@ -699,9 +717,11 @@
         }
         case 'new-order':
           if(!activeAccounts().length) throw Error('Ajouter un compte actif.');
-          modal('Créer un ordre à transmettre',form('new-order',field('accountId','Compte',select('accountId',accountsOptions(activeAccounts())))+
+          modal('Ordre manuel · achat ou vente',form('new-order',field('side','Nature',select('side',[['BUY','Acheter'],['SELL','Vendre']],'BUY'))+
+            field('accountId','Compte',select('accountId',accountsOptions(activeAccounts().filter(a=>a.currency==='XOF'))))+
             field('symbol','Titre',symInput())+field('qty','Actions entières',integer('qty'))+
-            field('price','Limite indicative',money('price')),'Enregistrer le projet'));break;
+            field('price','Limite indicative (FCFA)',money('price'))+
+            '<p class="quiet">Un projet ne touche ni aux espèces ni aux titres. Une vente requiert des actions réellement détenues ; les frais réels sont enregistrés à réception de l’avis.</p>','Enregistrer le projet'));break;
         case 'order-state': {
           const [o,status]=id.split('|');
           modal(status,form('order-state',field('reference','Référence / note de contrôle',input('reference','','text','required minlength="4" maxlength="180"')),
@@ -709,7 +729,7 @@
         }
         case 'order-fill': {
           const o=db.orders.find(x=>x.id===id);
-          transaction('BUY',{accountId:o.accountId,orderId:id,symbol:o.symbol});break;
+          transaction(o.side||'BUY',{accountId:o.accountId,orderId:id,symbol:o.symbol});break;
         }
         case 'order-trace': {
           const o=db.orders.find(x=>x.id===id);
@@ -879,7 +899,10 @@
           if(F.isFund(db,s)) throw Error('Saisir la souscription FCP confirmée dans Dividendes et FCP.');
           const a=findAccount(accountId);
           if(!a||!F.symbol(s)||!Number.isSafeInteger(qty)||!qty||price<=0) throw Error('Ordre invalide.');
-          next=F.createPlan(db,{portfolioId:a.portfolioId,mode:'manuel',funding:{[accountId]:0},lines:[{accountId,symbol:s,qty,price,estimateRate:a.brokerRate+a.otherRate}]});
+          const side=f.get('side');if(!['BUY','SELL'].includes(side)) throw Error('Type d’ordre inconnu.');
+          if(side==='SELL') {const held=calc.accounts.find(x=>x.id===accountId)?.positions[s]?.qty||0;
+            if(qty>held) throw Error('Vente supérieure aux actions détenues.');}
+          next=F.createPlan(db,{portfolioId:a.portfolioId,mode:'manuel',funding:{[accountId]:0},lines:[{accountId,symbol:s,qty,price,side,estimateRate:a.brokerRate+a.otherRate}]});
           break;
         }
         case 'save-plan':
@@ -995,6 +1018,10 @@
     } catch(err) {showError(err);}
     finally {busy=false;}
   });
+  document.addEventListener('input',e=>{
+    const form=e.target.closest('form[data-form=tx]');
+    if(form && ['qty','price','broker','other','tax'].includes(e.target.name)) tradePreview(form);
+  });
   document.addEventListener('change',e=>{
     const el=e.target;
     if(!db) return;
@@ -1006,7 +1033,7 @@
     if(el.matches('#portfolio')) {portfolioId=el.value;accountFilter='';plan=null;comparison=null;planInputs=null;render();$('#portfolio')?.focus();}
     if(el.matches('#account-filter')) {accountFilter=el.value;render();$('#account-filter')?.focus();}
     if(el.matches('#history-month')) {historyMonth=el.value;journalLimit=40;render();$('#history-month')?.focus();}
-    if(el.closest('form[data-form=tx]') && ['type','accountId','toAccountId'].includes(el.name)) transactionFields(el.form);
+    if(el.closest('form[data-form=tx]') && ['type','accountId','toAccountId'].includes(el.name)) {transactionFields(el.form);tradePreview(el.form);}
     if(el.id==='backup-verify') {
       const file=el.files?.[0];el.value='';
       if(file) void verifyMonthlyBackup(file).catch(showError);
