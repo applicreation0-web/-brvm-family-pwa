@@ -487,6 +487,10 @@
   const phraseFields=()=>field('pass','Phrase secrète (12 caractères ou plus)',input('pass','','password','required minlength="12" maxlength="1024" autocomplete="new-password"'))+
     field('again','Répéter la phrase',input('again','','password','required minlength="12" maxlength="1024" autocomplete="new-password"'));
   function preview(d) {
+    // Backup verification is local to each device. Restoring an old JSON never
+    // certifies that a new independent copy exists on this device.
+    d=structuredClone(d);
+    if(d.settings) delete d.settings.monthlyBackup;
     importPreview=d;
     importRevision=record.revision;
     const fact=F.calculate(d), identical=V.same(d,db);
