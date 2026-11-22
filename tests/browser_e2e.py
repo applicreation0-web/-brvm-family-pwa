@@ -106,6 +106,7 @@ def check(first, second):
         dialog.locator('[name=source]').fill('Cotation fictive recette')
         dialog.get_by_role('button', name='Enregistrer le cours').click()
         expect(page.get_by_text('Cotation enregistrée.')).to_be_visible()
+        page.locator('#nav [data-page=dashboard]').press('Enter')
         total=page.locator('.total').text_content()
         page.evaluate('navigator.serviceWorker.ready.then(() => true)')
         for width in (360, 412, 768, 1366):
