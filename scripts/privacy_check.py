@@ -12,13 +12,17 @@ import zipfile
 from build import shell
 
 ALLOWED = re.compile(
-    r'(?:\.(?:gitignore|nojekyll)|\.github/workflows/(?:ci|pages)\.yml|'
+    r'(?:\.(?:gitignore|nojekyll)|\.github/workflows/(?:ci|pages|android)\.yml|'
     r'(?:README|CHANGELOG|PRIVACY_DEPLOYMENT_WARNING)\.md|DEPLOIEMENT\.txt|'
     r'(?:index\.html|style\.css|manifest\.webmanifest|package\.json)|'
     r'(?:app|sw|finance|engine|analysis|quotes|vault)\.js|'
     r'icons/icon-(?:192|512)\.png|market/feed\.json|'
-    r'scripts/(?:build|privacy_check|prepare_feed)\.py|'
-    r'tests/(?:[a-z_0-9]+\.test\.js|[a-z_0-9]+\.py|account-merge\.test\.js))'
+    r'scripts/(?:build|build_android|privacy_check|prepare_feed)\.py|'
+    r'tests/(?:[a-z_0-9]+\.test\.js|[a-z_0-9]+\.py|account-merge\.test\.js)|'
+    r'android/(?:settings|build)\.gradle|android/gradle\.properties|android/app/build\.gradle|'
+    r'android/app/src/main/AndroidManifest\.xml|'
+    r'android/app/src/main/java/org/brvmfamily/app/MainActivity\.java|'
+    r'android/app/src/main/res/values/(?:strings|styles)\.xml)'
 )
 SENSITIVE = re.compile(
     r'(?:-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----|gh[pso]_[a-z0-9]{30,}|'
