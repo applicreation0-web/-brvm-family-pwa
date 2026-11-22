@@ -198,6 +198,14 @@
        <p class="quiet">Pourcentage principal = part du patrimoine connu. Sous chaque titre CORE : part des actions CORE / cible configurée. Les prix doivent être datés.</p>
        <div class="actions">${go('invest','Rééquilibrer sur les cibles')}${go('accounts','Voir toutes les actions')}</div></article>`;
   }
+  const validatedCore=()=>E.symbols.map(s=>s+' '+pct(E.targets[s])).join(' · ');
+  function targetNotice(p) {
+    if(!E.symbols.some(s=>Math.abs((p.targets[s]??0)-E.targets[s])>1e-8)) return '';
+    return `<section class="core-notice" role="status"><strong>Les cibles de ce portefeuille diffèrent des objectifs CORE validés.</strong>
+      <p>Sonatel 30 %, Orange 15 %, CIE 10 %, TotalEnergies 12 %, SMB 9 %, Nestlé 15 %, Palm 9 %.</p>
+      <p class="quiet">Les objectifs ne sont jamais remplacés silencieusement. Aucun cours, titre, frais ou solde ne sera modifié.</p>
+      ${btn('apply-core-targets','Rétablir les objectifs CORE validés','','primary')}</section>`;
+  }
   function coreProgress(p) {
     const actual=Object.fromEntries(E.symbols.map(s=>[s,selectedSgiAccounts(p).reduce((sum,a)=>sum+(a.positions[s]?.market||0),0)]));
     const known=Object.values(actual).reduce((n,v)=>n+v,0);
@@ -233,6 +241,7 @@
       <div class="kpis">${kpi('Patrimoine du portefeuille',fc(p.total),p.unknown?'Valeur partielle':'Titres et liquidités','accent')}${kpi('Cash disponible',fc(p.available),`${fc(p.reserved)} réservés sur ${fc(p.cash)}`)}
       ${kpi('Plus-value latente',fc(p.pnl),p.unknown?'Positions cotées uniquement':`Coût réel des titres · ${fc(p.cost)}`,p.pnl<0?'loss':'gain')}
       ${kpi('Dividendes nets reçus',fc(p.dividends),`${fc(p.grossDividends)} bruts depuis l’ouverture`)}</div>
+      ${targetNotice(p)}
       ${coreProgress(p)}
       ${points.length>1?pane('Évolution du patrimoine',curve(points),'Valeurs historiques validées et comparables'):''}
       <details class="dashboard-advanced"><summary>Voir le détail des comptes et des analyses</summary>
@@ -474,7 +483,8 @@
     return `<div class="context compact">${p?portfolioPicker():''}<p class="quiet">Les cibles s’appliquent au portefeuille sélectionné.</p></div>
       <div class="split">${pane('Cibles CORE',p?form('targets',`<div class="targets">${E.symbols.map(s=>
         field(s,`${s} · ${E.names[s]} (%)`,input(s,Math.round(p.targets[s]*10000)/100,'number','min="0" max="100" step="0.01" required'))).join('')}</div>
-        <p class="quiet">Télécom Sonatel + Orange : ${pct(p.targets.SNTS+p.targets.ORAC)} de la cible CORE. Total des cibles : 100 %.</p>`,
+        <p class="quiet">Télécom Sonatel + Orange : ${pct(p.targets.SNTS+p.targets.ORAC)} de la cible CORE. Total des cibles : 100 %.</p>
+        ${targetNotice(p)}`,
         'Enregistrer les cibles',p.id):empty('Créez un portefeuille pour fixer ses cibles.'))}
       ${pane('Filtrage et vigilance',`<p>Les banques historiques SGBC et CBIB restent en portefeuille. Elles sont exclues des propositions. Toute saisie d’achat exclu requiert un motif.</p>
         <p>Examiner l’activité, les revenus et ratios financiers et les critères du référentiel choisi. Écarter alcool, tabac, jeux et banques à intérêt selon la stratégie du portefeuille.</p>
@@ -697,6 +707,16 @@
           break;
         case 'quote-import': $('#quote-import').click(); break;
         case 'manual-quote': manualQuote(); break;
+        case 'apply-core-targets': {
+          const p=getPortfolio();
+          if(!p) throw Error('Sélectionnez un portefeuille.');
+          modal('Confirmer les objectifs CORE',form('apply-core-targets',
+            '<p>Répartition validée : <strong>Sonatel 30 % · Orange 15 % · CIE 10 % · TotalEnergies 12 % · SMB 9 % · Nestlé 15 % · Palm 9 %</strong></p>'+
+            '<p>Seules les pondérations cibles du portefeuille sélectionné changent ; les titres et espèces sont conservés.</p>'+
+            '<label class="check"><input type="checkbox" name="confirmed" required> Appliquer cette répartition à mon portefeuille.</label>',
+            'Appliquer les cibles',p.id));
+          break;
+        }
         case 'new-account':
           if(store.protected || db.accounts.length) modal('Ajouter un compte',accountForm());
           else modal('Protéger votre premier compte',form('protect',phraseFields(),'Activer le coffre et créer un compte','account'));
@@ -826,6 +846,16 @@
     let next, message='Enregistré sur cet appareil.', replace=false, page;
     try {
       switch(type) {
+        case 'apply-core-targets': {
+          if(!f.has('confirmed')) throw Error('Confirmez les nouvelles cibles.');
+          next=structuredClone(db);
+          const target=next.portfolios.find(p=>p.id===id);
+          if(!target) throw Error('Portefeuille introuvable.');
+          target.targets={...E.targets};
+          plan=null;comparison=null;planInputs=null;
+          message='Cibles CORE rétablies : Sonatel 30 %, total 100 %. Les positions sont inchangées.';
+          break;
+        }
         case 'account': {
           next=structuredClone(db);
           let a=next.accounts.find(x=>x.id===id);
