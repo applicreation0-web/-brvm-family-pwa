@@ -55,8 +55,10 @@ jobs:
       pages: write
       id-token: write
     steps:
-      - name: Préparer GitHub Pages
+      - name: Préparer ou activer GitHub Pages
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - name: Publier le shell vérifié
         id: deployment
         uses: actions/deploy-pages@v4
