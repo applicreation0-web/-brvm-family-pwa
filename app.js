@@ -276,7 +276,12 @@
       ${field('actualTotal','Total débité / crédité sur avis (FCFA)',money('actualTotal'))}</div>
       <div class="fields" data-types="BUY SELL DIVIDEND">${field('other','Autres frais (FCFA)',money('other',0))}${field('tax','Impôts / retenue (FCFA)',money('tax',0))}</div>
       <div class="fields" data-types="DIVIDEND">${field('gross','Brut reçu (FCFA)',money('gross',preset.gross??''))}
-      <label class="check"><input name="cashDistribution" type="checkbox"> FCP · distribution effectivement créditée hors VL</label></div>
+      <label class="check"><input name="cashDistribution" type="checkbox"> FCP · distribution effectivement créditée hors VL</label>
+      <p class="quiet">Contrôle par action facultatif : renseignez les trois champs pour vérifier la quantité éligible avant/après fractionnement.</p>
+      ${field('dividendRecordDate','Date d’éligibilité du dividende',input('dividendRecordDate','','date'))}
+      ${field('dividendEligibleQty','Nombre de titres éligibles',input('dividendEligibleQty','','number','step="1" min="1"'))}
+      ${field('dividendGrossPerShare','Dividende brut par action (FCFA)',input('dividendGrossPerShare','','number','step="0.01" min="0.01"'))}
+      ${field('dividendStatementRef','Avis de situation initiale (si date antérieure à la photographie)',input('dividendStatementRef','','text','maxlength="180"'))}</div>
       <div class="fields" data-types="SPLIT">${field('ratioFrom','Ancien nombre',integer('ratioFrom',1))}${field('ratioTo','Nouveau nombre',integer('ratioTo',10))}</div>
       <div class="fields" data-types="BONUS RIGHTS STOCK_DIVIDEND">
         ${field('recordDate','Date d’éligibilité avant attribution',input('recordDate','','date','required'))}
@@ -792,6 +797,13 @@
           row.type ||= form.dataset.type;
           row.accountId ||= form.dataset.account;
           row.cashDistribution=f.has('cashDistribution');
+          if(row.type==='DIVIDEND'&&['dividendRecordDate','dividendEligibleQty',
+            'dividendGrossPerShare','dividendStatementRef'].some(k=>trim(f,k))) {
+            row.dividendBasis={recordDate:trim(f,'dividendRecordDate'),
+              eligibleQty:number(f,'dividendEligibleQty'),grossPerShare:number(f,'dividendGrossPerShare'),
+              statementRef:trim(f,'dividendStatementRef')};
+          }
+          for(const k of ['dividendRecordDate','dividendEligibleQty','dividendGrossPerShare','dividendStatementRef']) delete row[k];
           if(row.type==='CORRECTION') row.replay=true;
           if(row.type==='TRANSFER'&&f.has('exchangeRate')) {
             row.toAmount=number(f,'toAmount');
