@@ -304,7 +304,7 @@
       const entry={id:'archive-tx-'+t.id,kind:'ARCHIVE_TRANSACTION',accountId,
         type:t.type,date:t.date,brokerRef:t.brokerRef};
       for(const field of ['symbol','qty','price','amount','gross','tax','broker',
-        'fees','other','actualTotal','ratioFrom','ratioTo','attachmentId'])
+        'fees','other','actualTotal','ratioFrom','ratioTo','dividendBasis','source','attachmentId'])
         if(t[field]!==undefined) entry[field]=structuredClone(t[field]);
       if(t.type==='TRANSFER') entry.direction=t.accountId===accountId?'SORTIE':'ENTRÉE';
       snapshot.history.push(entry);
