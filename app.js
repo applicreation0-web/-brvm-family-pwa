@@ -9,7 +9,14 @@
   const amountIn=(v,c)=>!c||c==='XOF'?fc(v):fmt.format(v)+' '+c;
   const pct=v=>v==null?'—':fmt.format(v*100)+' %';
   const showDate=v=>F.date(v)?v.split('-').reverse().join('/'):'—';
-  const col=['#74e0ac','#79adff','#c3afff','#ffc37a','#64dae7','#ff9aad','#e6df7d','#d1a6ff','#83b8b8','#f6a0be','#b6d4a7','#de9f75'];
+  // Correspondance couleur↔titre fixe : filtrer une SGI ne change jamais l'identité visuelle d'un titre.
+  const colors=Object.freeze({SNTS:'#00A86B',ORAC:'#2563EB',CIEC:'#FACC15',TOCI:'#F97316',
+    SMBC:'#8B5CF6',NTLC:'#E11D48',PALC:'#0E7490',SGBC:'#F472B6',CBIB:'#94A3B8',
+    Espèces:'#E7E5E4',SALAM_CI:'#84CC16',ALBARAKA2:'#C084FC'});
+  const fallbackColors=['#1D4ED8','#F97316','#B91C1C','#0D9488','#A16207','#7C3AED'];
+  const colorOf=s=>colors[s]||fallbackColors[[...s].reduce((x,c)=>x+c.charCodeAt(0),0)%fallbackColors.length];
+  const col=['#00A86B','#2563EB','#FACC15','#F97316','#8B5CF6','#E11D48','#0E7490'];
+
   const labels={DEPOSIT:'Versement reçu',WITHDRAW:'Retrait',BUY:'Achat',SELL:'Vente',FEE:'Frais de compte',
     DIVIDEND:'Dividende encaissé',SPLIT:'Fractionnement / regroupement',BONUS:'Actions gratuites',RIGHTS:'Droits',
     STOCK_DIVIDEND:'Dividende en actions',RIGHTS_EXPIRY:'Expiration de droits',TRANSFER:'Transfert',CORRECTION:'Rectification'};
@@ -20,7 +27,7 @@
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
   let importRevision, mergedImport, importReadTicket=0, pendingBackup=null;
-  let quoteOptions=null, checkpoint=null, restoreFocus=null, historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
+  let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
   const findAccount=id=>db.accounts.find(x=>x.id===id);
   const institution=id=>db.institutions.find(x=>x.id===id)?.label||'—';
@@ -111,6 +118,15 @@
     close();render();
     notify('Sauvegarde du mois vérifiée. Les modifications sont à nouveau autorisées.');
   }
+  function selectedSgiAccounts(p) {
+    return sgiFilter ? p.accounts.filter(a=>a.institutionId===sgiFilter) : p.accounts;
+  }
+  function sgiPicker(p) {
+    const ids=[...new Set(p.accounts.map(a=>a.institutionId))];
+    if(sgiFilter&&!ids.includes(sgiFilter)) sgiFilter='';
+    const choices=[['','Toutes les SGI'],...ids.map(id=>[id,institution(id)])];
+    return `<label class="picker sgi-picker"><span>Camembert par SGI</span>${select('sgi-view',choices,sgiFilter,'id="sgi-view" aria-label="Filtrer le camembert par SGI"')}</label>`;
+  }
   function portfolioPicker() {
     return `<label class="picker"><span>Portefeuille</span>${select('portfolio',calc.portfolios.map(p=>[p.id,p.label+(p.archived?' · archivé':'')]),portfolioId,'id="portfolio"')}</label>`;
   }
@@ -138,8 +154,9 @@
   // Camembert fondé sur les titres réellement valorisés et les espèces, par portefeuille.
   // Les positions sans cours restent explicitement signalées, jamais converties en zéro "connu".
   function allocationVisual(p) {
+    const selected=selectedSgiAccounts(p);
     const holdings=new Map();let cash=0, missing=0,missingFx=0;
-    for(const a of p.accounts) {
+    for(const a of selected) {
       const rate=a.rate?.xof||(a.currency==='XOF'?1:0);
       if(!rate) {if(a.cash||Object.values(a.positions).some(x=>x.qty)) missingFx++;continue;}
       cash+=a.cash*rate;
@@ -154,27 +171,35 @@
     if(cash>0) entries.push({symbol:'Espèces',value:cash});
     const total=entries.reduce((n,x)=>n+x.value,0);
     if(!total) return pane('Répartition réelle',empty('Aucune valeur connue à représenter. Ajoutez les cours des titres.'), 'Valorisations issues des cours disponibles');
-    let start=0;const stops=entries.map((x,i)=>{
+    // Traits sombres explicites entre parts : deux couleurs proches ne fusionnent pas visuellement.
+    let start=0;const stops=entries.flatMap(x=>{
       const from=start;start+=x.value/total*100;
-      return col[i%col.length]+' '+from.toFixed(5)+'% '+start.toFixed(5)+'%';
+      const gap=Math.min(.18,(start-from)/5);
+      return ['#171b23 '+from.toFixed(5)+'% '+(from+gap).toFixed(5)+'%',
+        colorOf(x.symbol)+' '+(from+gap).toFixed(5)+'% '+(start-gap).toFixed(5)+'%',
+        '#171b23 '+(start-gap).toFixed(5)+'% '+start.toFixed(5)+'%'];
     }).join(', ');
     const core=E.symbols.reduce((n,x)=>n+(holdings.get(x)||0),0);
-    const legend=entries.map((x,i)=>{
+    const legend=entries.map(x=>{
       const actual=x.value/total;
       const coreWeight=E.symbols.includes(x.symbol)&&core>0?(holdings.get(x.symbol)||0)/core:null;
       const target=E.symbols.includes(x.symbol)?p.targets[x.symbol]:null;
-      return `<li><span class="allocation-name"><i style="background:${col[i%col.length]}" aria-hidden="true"></i><b>${esc(x.symbol)}</b><small>${esc(E.names[x.symbol]||'')}</small></span>
+      return `<li><span class="allocation-name"><i style="background:${colorOf(x.symbol)}" aria-hidden="true"></i><b>${esc(x.symbol)}</b><small>${esc(E.names[x.symbol]||'')}</small></span>
         <span class="allocation-value"><strong>${pct(actual)}</strong><small>${fc(x.value)}</small>${db.quotes[x.symbol]?'<small>Cours '+showDate(db.quotes[x.symbol].date)+(F.stale(db.quotes[x.symbol],db.settings.staleDays)?' · ancien':'')+'</small>':''}${target!=null?'<small>CORE : '+pct(coreWeight)+' / cible '+pct(target)+'</small>':''}</span></li>`;
-    }).join('');
+    });
     const warning=missing||missingFx?`<p class="quiet" role="status">Répartition partielle : ${missing} titre(s) sans cours et ${missingFx} compte(s) sans conversion. Aucun montant inconnu n'est valorisé à zéro.</p>`:'';
-    return `<article class="pane allocation"><div class="pane-head"><h2>Répartition réelle · ${esc(p.label)}</h2><p>Sur les actifs valorisés, espèces comprises · ${fc(total)}</p></div>
-       <div class="allocation-grid"><div class="allocation-pie-wrap"><div class="allocation-pie" role="img" aria-label="Répartition actuelle des actifs cotés et des espèces" style="background:conic-gradient(${stops})"><div class="allocation-hole"><small>Patrimoine connu</small><strong>${fc(total)}</strong></div></div></div>
-       <ul class="allocation-legend">${legend}</ul></div>${warning}
+    const title=sgiFilter?institution(sgiFilter):'Toutes les SGI';
+    const compact=legend.slice(0,6).join('');
+    const more=legend.length>6?`<details class="allocation-more"><summary>Afficher les ${legend.length-6} autres titres et espèces</summary><ul class="allocation-legend">${legend.slice(6).join('')}</ul></details>`:'';
+    return `<article class="pane allocation"><div class="pane-head"><h2>Répartition réelle · ${esc(title)}</h2><p>Actifs valorisés, espèces comprises · ${fc(total)} · ${selected.length} compte(s)</p></div>
+       ${sgiPicker(p)}
+       <div class="allocation-grid"><div class="allocation-pie-wrap"><div class="allocation-pie" role="img" aria-label="Répartition ${esc(title)} des actifs cotés et espèces, repérée par couleurs et légende" style="background:conic-gradient(${stops})"><div class="allocation-hole"><small>Patrimoine connu</small><strong>${fc(total)}</strong></div></div></div>
+       <div class="allocation-breakdown"><ul class="allocation-legend">${compact}</ul>${more}</div></div>${warning}
        <p class="quiet">Pourcentage principal = part du patrimoine connu. Sous chaque titre CORE : part des actions CORE / cible configurée. Les prix doivent être datés.</p>
        <div class="actions">${go('invest','Rééquilibrer sur les cibles')}${go('accounts','Voir toutes les actions')}</div></article>`;
   }
   function coreProgress(p) {
-    const actual=Object.fromEntries(E.symbols.map(s=>[s,p.accounts.reduce((sum,a)=>sum+(a.positions[s]?.market||0),0)]));
+    const actual=Object.fromEntries(E.symbols.map(s=>[s,selectedSgiAccounts(p).reduce((sum,a)=>sum+(a.positions[s]?.market||0),0)]));
     const known=Object.values(actual).reduce((n,v)=>n+v,0);
     const rows=E.symbols.map(s=>{
       const weight=known?actual[s]/known:0, target=p.targets[s], diff=weight-target;
@@ -183,8 +208,8 @@
         <div class="core-line"><strong>${esc(s)}</strong><span>${known?pct(weight):'—'} · cible ${pct(target)} · écart ${known?(diff>=0?'+':'')+pct(diff):'—'}</span></div>
         <div class="core-track" aria-label="${esc(s)} actuellement ${pct(weight)}, cible ${pct(target)}"><span style="width:${width}%"></span><i style="left:${targetWidth}%"></i></div></div>`;
     }).join('');
-    const missing=p.accounts.some(a=>E.symbols.some(sym=>(a.positions[sym]?.qty||0)>0 && !(a.positions[sym]?.price>0)));
-    return `<article class="pane"><div class="pane-head"><h2>CORE · actuel contre objectif</h2><p>Le trait clair indique la cible, la barre représente le poids réel dans les actions CORE.</p></div>
+    const missing=selectedSgiAccounts(p).some(a=>E.symbols.some(sym=>(a.positions[sym]?.qty||0)>0 && !(a.positions[sym]?.price>0)));
+    return `<article class="pane"><div class="pane-head"><h2>CORE · ${esc(sgiFilter?institution(sgiFilter):'Toutes les SGI')} face aux cibles du portefeuille</h2><p>Le trait clair indique la cible, la barre représente le poids réel dans les actions CORE.</p></div>
       ${known?rows:empty('Aucune action CORE valorisée. Importez d’abord les cours.')}
       ${missing?'<p class="quiet">Cours manquants : les pourcentages sont incomplets.</p>':''}
       <div class="actions">${go('invest','Acheter les lignes sous-pondérées')}</div></article>`;
@@ -529,6 +554,7 @@
   function render() {
     if(!db) return;
     if(!calc.portfolios.some(p=>p.id===portfolioId)) portfolioId=calc.portfolios[0]?.id||'';
+    if(sgiFilter && !calc.portfolios.find(p=>p.id===portfolioId)?.accounts.some(a=>a.institutionId===sgiFilter)) sgiFilter='';
     $('#nav').innerHTML=Object.entries(pages).map(([key,[label,icon]])=>
       `<button type="button" data-page="${key}" ${key===tab?'aria-current="page"':''}><span aria-hidden="true">${icon}</span>${label}</button>`).join('');
     $('#page-title').textContent=pages[tab][0];
@@ -1034,7 +1060,8 @@
       options.hidden=el.value!=='manuel';
       if(!options.hidden) options.closest('details').open=true;
     }
-    if(el.matches('#portfolio')) {portfolioId=el.value;accountFilter='';plan=null;comparison=null;planInputs=null;render();$('#portfolio')?.focus();}
+    if(el.matches('#portfolio')) {portfolioId=el.value;sgiFilter='';accountFilter='';plan=null;comparison=null;planInputs=null;render();$('#portfolio')?.focus();}
+    if(el.matches('#sgi-view')) {sgiFilter=el.value;render();$('#sgi-view')?.focus();}
     if(el.matches('#account-filter')) {accountFilter=el.value;render();$('#account-filter')?.focus();}
     if(el.matches('#history-month')) {historyMonth=el.value;journalLimit=40;render();$('#history-month')?.focus();}
     if(el.closest('form[data-form=tx]') && ['type','accountId','toAccountId'].includes(el.name)) {transactionFields(el.form);tradePreview(el.form);}
