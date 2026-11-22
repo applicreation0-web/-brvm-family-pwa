@@ -252,3 +252,130 @@ test('OST25 vendeurs ne peuvent vendre des titres absents ni dépenser un divide
   assert.throws(()=>book(d,'SELL',{symbol:'ORAC',qty:1,price:20000,broker:0,other:0,tax:0,
     actualTotal:20000}),/quantité/);
 });
+
+
+test('OST26 droits attribués puis expirés: aucun cash fictif, quantité zéro',()=>{
+  const issued=book(split(fixture({five:false})),'RIGHTS',{
+    date:'2026-10-30',symbol:'DROI',qty:3,recordDate:'2026-10-27',
+    entitlement:{underlying:'SNTS',numerator:1,denominator:10},source:'Avis de droits'});
+  const expired=book(issued,'RIGHTS_EXPIRY',{date:'2026-11-02',
+    symbol:'DROI',qty:3,source:'Avis expiration courtier'});
+  assert.equal(at(expired).cash,at(issued).cash);
+  assert.equal(at(expired).positions.DROI.qty,0);
+  assert.equal(at(expired).positions.DROI.cost,0);
+  assert.equal(at(expired).realized,at(issued).realized);
+});
+test('OST27 droits acquis contre paiement puis expirés partiellement: coût passé en perte',()=>{
+  const d=fixture({five:false});
+  d.instruments.DROI={label:'Droits fictifs',kind:'DROIT'};
+  const bought=book(d,'BUY',{date:'2026-10-27',
+    symbol:'DROI',qty:2,price:100,broker:0,other:0,tax:0,actualTotal:200});
+  const first=book(bought,'RIGHTS_EXPIRY',{date:'2026-10-30',
+    symbol:'DROI',qty:1,source:'Avis droits expirés'});
+  assert.equal(at(first).cash,at(bought).cash);
+  assert.equal(at(first).positions.DROI.qty,1);
+  assert.equal(at(first).positions.DROI.cost,100);
+  assert.equal(at(first).realized,-100);
+  const last=book(first,'RIGHTS_EXPIRY',{date:'2026-11-02',
+    symbol:'DROI',qty:1,source:'Second avis droits expirés'});
+  assert.equal(at(last).positions.DROI.qty,0);
+  assert.equal(at(last).realized,-200);
+});
+test('OST28 expiration rejetée pour action ordinaire ou quantité supérieure',()=>{
+  const d=fixture({five:false});
+  assert.throws(()=>book(d,'RIGHTS_EXPIRY',{symbol:'SNTS',qty:1,source:'Avis fictif'}),/droit identifié/);
+  d.instruments.DROI={label:'Droits fictifs',kind:'DROIT'};
+  assert.throws(()=>book(d,'RIGHTS_EXPIRY',{symbol:'DROI',qty:1,source:'Avis fictif'}),/supérieure/);
+});
+test('OST29 dividende vérifié sur 30 titres après fractionnement Sonatel',()=>{
+  const d=split(fixture({five:false}));
+  const paid=book(d,'DIVIDEND',{symbol:'SNTS',date:'2026-10-30',
+    gross:5790,tax:570,other:0,dividendBasis:{
+      recordDate:'2026-10-27',eligibleQty:30,grossPerShare:193}});
+  assert.equal(at(paid).cash,15220);
+  assert.equal(at(paid).positions.SNTS.qty,30);
+});
+test('OST30 éligibilité avant split: dividende brut fondé sur 3 anciens titres',()=>{
+  const d=split(fixture({five:false}));
+  const recordDate='2026-10-25';
+  const paid=book(d,'DIVIDEND',{symbol:'SNTS',date:'2026-10-30',
+    gross:5790,tax:570,other:0,dividendBasis:{recordDate,eligibleQty:3,grossPerShare:1930}});
+  assert.equal(at(paid).dividends,5220);
+  assert.throws(()=>book(d,'DIVIDEND',{symbol:'SNTS',date:'2026-10-30',
+    gross:5790,tax:570,other:0,
+    dividendBasis:{recordDate,eligibleQty:30,grossPerShare:193}}),/éligible/);
+});
+test('OST31 avant date de photographie: avis quantifié externe requis',()=>{
+  const d=fixture({five:false});
+  const props={symbol:'SNTS',date:'2026-10-30',gross:5790,tax:570,other:0,
+    dividendBasis:{recordDate:'2026-10-19',eligibleQty:3,grossPerShare:1930}};
+  assert.throws(()=>book(d,'DIVIDEND',props),/Avis du courtier/);
+  const paid=book(d,'DIVIDEND',{...props,
+    dividendBasis:{...props.dividendBasis,statementRef:'AVIS-FGI-2026'}});
+  assert.equal(at(paid).dividends,5220);
+});
+test('OST32 montant brut incompatible avec le nombre de titres est rejeté',()=>{
+  const d=split(fixture({five:false}));
+  assert.throws(()=>book(d,'DIVIDEND',{symbol:'SNTS',gross:5790,tax:0,other:0,
+    dividendBasis:{recordDate:'2026-10-27',eligibleQty:30,grossPerShare:200}}),/incohérent/);
+  assert.throws(()=>book(d,'DIVIDEND',{symbol:'SNTS',gross:5790,tax:0,other:0,
+    dividendBasis:{recordDate:'2026-10-27',eligibleQty:0,grossPerShare:193}}),/incohérent/);
+});
+test('OST33 achat juste après date d’éligibilité ne donne aucun dividende rétroactif',()=>{
+  const base=fixture({five:false});
+  base.positions=[];F.calculate(base);
+  const first=book(base,'BUY',{date:'2026-10-28',
+    symbol:'SNTS',qty:3,price:3000,broker:0,other:0,tax:0,actualTotal:9000});
+  assert.equal(at(first).positions.SNTS.qty,3);
+  assert.throws(()=>book(first,'DIVIDEND',{symbol:'SNTS',date:'2026-10-30',
+    gross:5790,tax:0,other:0,
+    dividendBasis:{recordDate:'2026-10-27',eligibleQty:3,grossPerShare:1930}}),/éligible/);
+});
+test('OST34 rectification d’une expiration restaure la quantité et le coût sans cash',()=>{
+  const d=fixture({five:false});d.instruments.DROI={label:'Droit',kind:'DROIT'};
+  const bought=book(d,'BUY',{date:'2026-10-27',symbol:'DROI',qty:2,price:100,
+    broker:0,other:0,tax:0,actualTotal:200});
+  const expired=book(bought,'RIGHTS_EXPIRY',{date:'2026-10-30',
+    symbol:'DROI',qty:1,source:'Avis erreur'});
+  const corrected=book(expired,'CORRECTION',{date:'2026-11-02',replay:true,
+    corrects:expired.transactions.at(-1).id,note:'Annulation du mauvais avis'});
+  assert.equal(at(corrected).positions.DROI.qty,2);
+  assert.equal(at(corrected).positions.DROI.cost,200);
+  assert.equal(at(corrected).realized,0);
+  assert.equal(at(corrected).cash,at(bought).cash);
+});
+test('OST35 quotas des droits sont propres à chaque compte de la famille',()=>{
+  const d=split(fixture());
+  const first=book(d,'RIGHTS',{symbol:'DROI',date:'2026-10-30',qty:6,
+    recordDate:'2026-10-27',entitlement:{underlying:'SNTS',numerator:1,denominator:5},
+    source:'Avis droit fictif'});
+  assert.equal(at(first,'parent-fgi').positions.DROI.qty,6);
+  assert.equal(at(first,'parent-cgf').positions.DROI,undefined);
+  assert.equal(at(first,'child-a').positions.DROI,undefined);
+});
+test('OST36 stress 80 couples split/regroupement: invariants de trésorerie et de coût',()=>{
+  for(let i=0;i<80;i++){
+    const ratio=2+i%9;
+    const d=fixture({five:false});
+    const first=split(d,{ratioTo:ratio,brokerRef:'SPLIT-STRESS-'+i});
+    const second=split(first,{date:'2026-11-02',ratioFrom:ratio,ratioTo:1,
+      brokerRef:'REVERSE-STRESS-'+i});
+    const p=at(d),after=at(second);
+    assert.equal(after.positions.SNTS.qty,p.positions.SNTS.qty);
+    assert.equal(after.positions.SNTS.cost,p.positions.SNTS.cost);
+    assert.equal(after.cash,p.cash);
+    assert.ok(Math.abs(after.market-p.market)<0.011);
+  }
+});
+test('OST37 les justificatifs d’attribution prévalent sur une position déjà vendue',()=>{
+  const d=fixture({five:false});
+  const sold=book(d,'SELL',{date:'2026-10-25',symbol:'SNTS',qty:3,price:43000,
+    broker:0,other:0,tax:0,actualTotal:129000});
+  assert.equal(at(sold).positions.SNTS.qty,0);
+  // The right was fixed before the sale, so the share entitlement remains valid.
+  const allocated=book(sold,'RIGHTS',{date:'2026-10-30',symbol:'DROI',qty:1,
+    recordDate:'2026-10-24',entitlement:{underlying:'SNTS',numerator:1,denominator:3},
+    source:'Avis de détachement'});
+  assert.equal(at(allocated).positions.DROI.qty,1);
+  assert.equal(at(allocated).positions.SNTS.qty,0);
+});
