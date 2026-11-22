@@ -176,6 +176,9 @@ def check(first, second):
         confirm.locator('[name=confirmed]').check()
         confirm.locator('button[type=submit]').click()
         expect(page.locator('.core-notice')).to_have_count(0)
+        expect(page.locator('form[data-form=targets] [name=SNTS]')).to_have_value('30')
+        page.locator('#nav [data-page=dashboard]').click()
+        expect(page.get_by_role('heading', name='Vue d’ensemble')).to_be_visible()
         expect(page.get_by_text('cible 30 %', exact=False).first).to_be_visible()
 
         # Nouvelle SGI sur le même portefeuille ; zéro achat/dépôt, répartition globale inchangée.
