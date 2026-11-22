@@ -1,5 +1,5 @@
 const PREFIX='brvm-family-shell:'+self.registration.scope+'|';
-const CACHE=PREFIX+'v3.1.0-operations-dashboard-20261122';
+const CACHE=PREFIX+'v3.2.0-sgi-pie-colors-core-20261122';
 const SHELL=['index.html','style.css','engine.js','finance.js','vault.js','quotes.js','analysis.js','app.js',
   'manifest.webmanifest','icons/icon-192.png','icons/icon-512.png'];
 const urls=new Set(SHELL.map(p=>new URL(p,self.registration.scope).href));
