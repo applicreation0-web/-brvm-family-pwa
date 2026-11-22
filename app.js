@@ -507,7 +507,8 @@
       <p>${identical?'Ce fichier est identique aux données locales. Aucune écriture ne sera ajoutée.':
         hasLocal?'Le remplacement conserve le jeu précédent. Une fusion est proposée uniquement lorsque les données peuvent être réunies sans doublon ni rejeu.':'Les données seront enregistrées après votre confirmation.'}</p>
       ${form('restore',
-        (mergedImport?field('mode','Action',select('mode',[['replace','Remplacer les données locales'],['merge','Fusionner les jeux compatibles']],'replace','required')):'')+
+        (mergedImport?field('mode','Action',select('mode',[['merge','Fusionner les comptes compatibles'],['replace','Remplacer les données locales']],'merge','required')):'')+
+        (hasLocal&&!identical?'<label class="check"><input name="acceptReplace" type="checkbox"> Je comprends qu’un remplacement supprime tous les comptes absents du fichier importé.</label>':'')+
         (store.protected?'':'<p>Configurez le coffre pour enregistrer cet import sur cet appareil.</p>'+phraseFields()),
         identical?'Confirmer sans doublon':hasLocal?'Appliquer le choix':'Importer et enregistrer')}`);
   }
@@ -905,8 +906,13 @@
         case 'legacy': await recoverLegacy();return;
         case 'legacy-unlock': await recoverLegacy(f.get('pass'));return;
         case 'restore': {
-          const data=f.get('mode')==='merge'?mergedImport:importPreview;
+          const mergeMode=f.get('mode')==='merge';
+          const data=mergeMode?mergedImport:importPreview;
           if(!data||record.revision!==importRevision) throw Error('Les données ont changé. Ouvrez de nouveau le fichier.');
+          const currentHasData=db.accounts.length||db.owners.length||db.portfolios.length||
+            db.transactions.length||db.history.length;
+          if(!mergeMode&&currentHasData&&!V.same(db,importPreview)&&!f.has('acceptReplace'))
+            throw Error('Confirmez explicitement le remplacement pour éviter la perte d’autres comptes.');
           if(!store.protected) {
             if(f.get('pass')!==f.get('again')) throw Error('Les deux phrases diffèrent.');
             record=await store.protect(f.get('pass'),importRevision,data,true);
