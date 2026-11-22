@@ -12,7 +12,7 @@
   const col=['#74e0ac','#79adff','#c3afff','#ffc37a','#64dae7','#ff9aad','#e6df7d'];
   const labels={DEPOSIT:'Versement reçu',WITHDRAW:'Retrait',BUY:'Achat',SELL:'Vente',FEE:'Frais de compte',
     DIVIDEND:'Dividende encaissé',SPLIT:'Fractionnement / regroupement',BONUS:'Actions gratuites',RIGHTS:'Droits',
-    STOCK_DIVIDEND:'Dividende en actions',TRANSFER:'Transfert',CORRECTION:'Rectification'};
+    STOCK_DIVIDEND:'Dividende en actions',RIGHTS_EXPIRY:'Expiration de droits',TRANSFER:'Transfert',CORRECTION:'Rectification'};
   const basis={manual:'Saisi localement',official:'Officiel (source déclarée)',provisional:'Provisoire',theoretical:'Théorique après split',execution:'Prix d’exécution'};
   const pages={dashboard:['Vue d’ensemble','▦'],accounts:['Comptes et positions','▤'],invest:['Investissement','◎'],orders:['Ordres','⇄'],
     events:['Dividendes et FCP','◈'],history:['Historique et analyses','◷'],settings:['Cibles et risques','⚙'],data:['Données et sauvegarde','⬡']};
@@ -262,7 +262,7 @@
       ${field('accountId','Compte',select('accountId',accountsOptions(list),a,forced?'data-locked="yes"':''))}
       ${field('date','Date effective',input('date',F.today(),'date','required max="'+F.today()+'"'))}
       ${field('brokerRef','Référence du justificatif',input('brokerRef','','text','required minlength="4" maxlength="180"'))}</div>
-      <div class="fields" data-types="BUY SELL DIVIDEND SPLIT BONUS RIGHTS STOCK_DIVIDEND">${field('symbol','Symbole',symInput(preset.symbol||''))}</div>
+      <div class="fields" data-types="BUY SELL DIVIDEND SPLIT BONUS RIGHTS STOCK_DIVIDEND RIGHTS_EXPIRY">${field('symbol','Symbole',symInput(preset.symbol||''))}</div>
       <div class="fields" data-types="DEPOSIT WITHDRAW FEE TRANSFER">${field('amount','Montant confirmé dans la devise du compte',money('amount'))}</div>
       <div class="fields" data-types="TRANSFER">${field('toAccountId','Compte destinataire',select('toAccountId',accountsOptions(list),'','required'))}</div>
       <div class="fields" data-fx-transfer hidden>
@@ -271,7 +271,7 @@
         ${field('exchangeDate','Date du change',input('exchangeDate',F.today(),'date','required'))}
         ${field('exchangeSource','Référence du bordereau de change',input('exchangeSource','','text','required maxlength="200"'))}
       </div>
-      <div class="fields" data-types="BUY SELL BONUS RIGHTS STOCK_DIVIDEND">${field('qty','Quantité réelle',input('qty','','number','required step="any" min="0.000001"'))}</div>
+      <div class="fields" data-types="BUY SELL BONUS RIGHTS STOCK_DIVIDEND RIGHTS_EXPIRY">${field('qty','Quantité réelle',input('qty','','number','required step="any" min="0.000001"'))}</div>
       <div class="fields" data-types="BUY SELL">${field('price','Prix unitaire réel (FCFA)',money('price'))}${field('broker','Courtage réel (FCFA)',money('broker',0))}
       ${field('actualTotal','Total débité / crédité sur avis (FCFA)',money('actualTotal'))}</div>
       <div class="fields" data-types="BUY SELL DIVIDEND">${field('other','Autres frais (FCFA)',money('other',0))}${field('tax','Impôts / retenue (FCFA)',money('tax',0))}</div>
@@ -286,7 +286,7 @@
         ${field('statementQty','Quantité éligible sur avis avant ouverture',integer('statementQty','',false))}
         ${field('statementRef','Référence de l’avis avant ouverture',input('statementRef','','text','maxlength="200"'))}
       </div>
-      <div class="fields" data-types="SPLIT BONUS RIGHTS STOCK_DIVIDEND">${field('source','Source de l’événement',input('source','','text','required maxlength="200"'))}</div>
+      <div class="fields" data-types="SPLIT BONUS RIGHTS STOCK_DIVIDEND RIGHTS_EXPIRY">${field('source','Source de l’événement',input('source','','text','required maxlength="200"'))}</div>
       <div data-types="BUY" class="fields">${field('override','Motif de dérogation si titre exclu',input('override','','text','maxlength="200"'))}</div>
       ${preset.corrects?'<p>Le moteur recalcule les écritures suivantes. Une rectification incompatible est refusée sans modifier le journal.</p>':''}
       ${preset.reinvests?'<p>Achat confirmé financé par le dividende net associé, dans la limite du solde disponible.</p>':''}
@@ -396,7 +396,7 @@
       esc(t.brokerRef)+(t.note?'<br><small>'+esc(t.note)+'</small>':''),
       `<div class="actions">${btn('tx-detail','Détail',t.id)}${t.attachmentId?btn('attachment','Télécharger la pièce',t.attachmentId):''}
       ${t.type==='DIVIDEND'&&!db.transactions.some(x=>x.corrects===t.id)?btn('reinvest','Réinvestir sur avis',t.id):''}
-      ${['DEPOSIT','WITHDRAW','FEE','TRANSFER','BUY','SELL','DIVIDEND','BONUS','RIGHTS','STOCK_DIVIDEND'].includes(t.type)&&!db.transactions.some(x=>x.corrects===t.id)?btn('correct','Rectifier',t.id):''}</div>`];
+      ${['DEPOSIT','WITHDRAW','FEE','TRANSFER','BUY','SELL','DIVIDEND','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY'].includes(t.type)&&!db.transactions.some(x=>x.corrects===t.id)?btn('correct','Rectifier',t.id):''}</div>`];
   }
   function historyView() {
     const p=getPortfolio();
