@@ -509,10 +509,20 @@
   async function chooseImport(file) {
     const ticket=++importReadTicket;
     $('#flash').hidden=true;
-    if(file.size>V.MAX) throw Error('Sauvegarde trop volumineuse.');
+    const isZip=/\.zip$/i.test(file.name);
+    if(file.size>(isZip?128*1024*1024:V.MAX)) throw Error('Sauvegarde trop volumineuse.');
     let raw;
-    try {raw=JSON.parse(await file.text());}
-    catch {throw Error('Fichier JSON illisible. Les données locales sont conservées.');}
+    if(isZip) {
+      const archive=V.readZip(new Uint8Array(await file.arrayBuffer()));
+      const manifest=JSON.parse(archive.get('MANIFESTE.json')||'null');
+      if(manifest?.format!=='brvm-monthly-bundle-v1'||!archive.has('BRVM_COMPLET.json'))
+        throw Error('Le ZIP ne correspond pas à une sauvegarde BRVM mensuelle.');
+      try {raw=JSON.parse(archive.get('BRVM_COMPLET.json'));}
+      catch {throw Error('JSON complet corrompu dans le ZIP.');}
+    } else {
+      try {raw=JSON.parse(await file.text());}
+      catch {throw Error('Fichier JSON illisible. Les données locales sont conservées.');}
+    }
     if(ticket!==importReadTicket) return;
     if(raw?.schema===V.FORMAT) {
       importPreview=raw;
