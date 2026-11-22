@@ -9,7 +9,14 @@
   const amountIn=(v,c)=>!c||c==='XOF'?fc(v):fmt.format(v)+' '+c;
   const pct=v=>v==null?'—':fmt.format(v*100)+' %';
   const showDate=v=>F.date(v)?v.split('-').reverse().join('/'):'—';
-  const col=['#74e0ac','#79adff','#c3afff','#ffc37a','#64dae7','#ff9aad','#e6df7d','#d1a6ff','#83b8b8','#f6a0be','#b6d4a7','#de9f75'];
+  // Correspondance couleur↔titre fixe : filtrer une SGI ne change jamais l'identité visuelle d'un titre.
+  const colors=Object.freeze({SNTS:'#00A86B',ORAC:'#2563EB',CIEC:'#FACC15',TOCI:'#F97316',
+    SMBC:'#8B5CF6',NTLC:'#E11D48',PALC:'#0E7490',SGBC:'#F472B6',CBIB:'#94A3B8',
+    Espèces:'#E7E5E4',SALAM_CI:'#84CC16',ALBARAKA2:'#C084FC'});
+  const fallbackColors=['#1D4ED8','#F97316','#B91C1C','#0D9488','#A16207','#7C3AED'];
+  const colorOf=s=>colors[s]||fallbackColors[[...s].reduce((x,c)=>x+c.charCodeAt(0),0)%fallbackColors.length];
+  const col=['#00A86B','#2563EB','#FACC15','#F97316','#8B5CF6','#E11D48','#0E7490'];
+
   const labels={DEPOSIT:'Versement reçu',WITHDRAW:'Retrait',BUY:'Achat',SELL:'Vente',FEE:'Frais de compte',
     DIVIDEND:'Dividende encaissé',SPLIT:'Fractionnement / regroupement',BONUS:'Actions gratuites',RIGHTS:'Droits',
     STOCK_DIVIDEND:'Dividende en actions',RIGHTS_EXPIRY:'Expiration de droits',TRANSFER:'Transfert',CORRECTION:'Rectification'};
@@ -20,7 +27,7 @@
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
   let importRevision, mergedImport, importReadTicket=0, pendingBackup=null;
-  let quoteOptions=null, checkpoint=null, restoreFocus=null, historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
+  let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
   const findAccount=id=>db.accounts.find(x=>x.id===id);
   const institution=id=>db.institutions.find(x=>x.id===id)?.label||'—';
@@ -111,6 +118,15 @@
     close();render();
     notify('Sauvegarde du mois vérifiée. Les modifications sont à nouveau autorisées.');
   }
+  function selectedSgiAccounts(p) {
+    return sgiFilter ? p.accounts.filter(a=>a.institutionId===sgiFilter) : p.accounts;
+  }
+  function sgiPicker(p) {
+    const ids=[...new Set(p.accounts.map(a=>a.institutionId))];
+    if(sgiFilter&&!ids.includes(sgiFilter)) sgiFilter='';
+    const choices=[['','Toutes les SGI'],...ids.map(id=>[id,institution(id)])];
+    return `<label class="picker sgi-picker"><span>Camembert par SGI</span>${select('sgi-view',choices,sgiFilter,'id="sgi-view" aria-label="Filtrer le camembert par SGI"')}</label>`;
+  }
   function portfolioPicker() {
     return `<label class="picker"><span>Portefeuille</span>${select('portfolio',calc.portfolios.map(p=>[p.id,p.label+(p.archived?' · archivé':'')]),portfolioId,'id="portfolio"')}</label>`;
   }
@@ -138,8 +154,9 @@
   // Camembert fondé sur les titres réellement valorisés et les espèces, par portefeuille.
   // Les positions sans cours restent explicitement signalées, jamais converties en zéro "connu".
   function allocationVisual(p) {
+    const selected=selectedSgiAccounts(p);
     const holdings=new Map();let cash=0, missing=0,missingFx=0;
-    for(const a of p.accounts) {
+    for(const a of selected) {
       const rate=a.rate?.xof||(a.currency==='XOF'?1:0);
       if(!rate) {if(a.cash||Object.values(a.positions).some(x=>x.qty)) missingFx++;continue;}
       cash+=a.cash*rate;
@@ -153,28 +170,44 @@
     const entries=titles.map(([symbol,value])=>({symbol,value}));
     if(cash>0) entries.push({symbol:'Espèces',value:cash});
     const total=entries.reduce((n,x)=>n+x.value,0);
-    if(!total) return pane('Répartition réelle',empty('Aucune valeur connue à représenter. Ajoutez les cours des titres.'), 'Valorisations issues des cours disponibles');
-    let start=0;const stops=entries.map((x,i)=>{
+    if(!total) return `<article class="pane allocation">${heading('Répartition réelle · '+(sgiFilter?institution(sgiFilter):'Toutes les SGI'))}${sgiPicker(p)}${empty('Aucun titre valorisé ni espèces sur cette sélection. Changez de SGI ou renseignez les cours.')}${go('accounts','Voir les comptes')}</article>`;
+    // Traits sombres explicites entre parts : deux couleurs proches ne fusionnent pas visuellement.
+    let start=0;const stops=entries.flatMap(x=>{
       const from=start;start+=x.value/total*100;
-      return col[i%col.length]+' '+from.toFixed(5)+'% '+start.toFixed(5)+'%';
+      const gap=Math.min(.18,(start-from)/5);
+      return ['#171b23 '+from.toFixed(5)+'% '+(from+gap).toFixed(5)+'%',
+        colorOf(x.symbol)+' '+(from+gap).toFixed(5)+'% '+(start-gap).toFixed(5)+'%',
+        '#171b23 '+(start-gap).toFixed(5)+'% '+start.toFixed(5)+'%'];
     }).join(', ');
     const core=E.symbols.reduce((n,x)=>n+(holdings.get(x)||0),0);
-    const legend=entries.map((x,i)=>{
+    const legend=entries.map(x=>{
       const actual=x.value/total;
       const coreWeight=E.symbols.includes(x.symbol)&&core>0?(holdings.get(x.symbol)||0)/core:null;
       const target=E.symbols.includes(x.symbol)?p.targets[x.symbol]:null;
-      return `<li><span class="allocation-name"><i style="background:${col[i%col.length]}" aria-hidden="true"></i><b>${esc(x.symbol)}</b><small>${esc(E.names[x.symbol]||'')}</small></span>
+      return `<li><span class="allocation-name"><i style="background:${colorOf(x.symbol)}" aria-hidden="true"></i><b>${esc(x.symbol)}</b><small>${esc(E.names[x.symbol]||'')}</small></span>
         <span class="allocation-value"><strong>${pct(actual)}</strong><small>${fc(x.value)}</small>${db.quotes[x.symbol]?'<small>Cours '+showDate(db.quotes[x.symbol].date)+(F.stale(db.quotes[x.symbol],db.settings.staleDays)?' · ancien':'')+'</small>':''}${target!=null?'<small>CORE : '+pct(coreWeight)+' / cible '+pct(target)+'</small>':''}</span></li>`;
-    }).join('');
+    });
     const warning=missing||missingFx?`<p class="quiet" role="status">Répartition partielle : ${missing} titre(s) sans cours et ${missingFx} compte(s) sans conversion. Aucun montant inconnu n'est valorisé à zéro.</p>`:'';
-    return `<article class="pane allocation"><div class="pane-head"><h2>Répartition réelle · ${esc(p.label)}</h2><p>Sur les actifs valorisés, espèces comprises · ${fc(total)}</p></div>
-       <div class="allocation-grid"><div class="allocation-pie-wrap"><div class="allocation-pie" role="img" aria-label="Répartition actuelle des actifs cotés et des espèces" style="background:conic-gradient(${stops})"><div class="allocation-hole"><small>Patrimoine connu</small><strong>${fc(total)}</strong></div></div></div>
-       <ul class="allocation-legend">${legend}</ul></div>${warning}
+    const title=sgiFilter?institution(sgiFilter):'Toutes les SGI';
+    const compact=legend.slice(0,6).join('');
+    const more=legend.length>6?`<details class="allocation-more"><summary>Afficher les ${legend.length-6} autres titres et espèces</summary><ul class="allocation-legend">${legend.slice(6).join('')}</ul></details>`:'';
+    return `<article class="pane allocation"><div class="pane-head"><h2>Répartition réelle · ${esc(title)}</h2><p>Actifs valorisés, espèces comprises · ${fc(total)} · ${selected.length} compte(s)</p></div>
+       ${sgiPicker(p)}
+       <div class="allocation-grid"><div class="allocation-pie-wrap"><div class="allocation-pie" role="img" aria-label="Répartition ${esc(title)} des actifs cotés et espèces, repérée par couleurs et légende" style="background:conic-gradient(${stops})"><div class="allocation-hole"><small>Patrimoine connu</small><strong>${fc(total)}</strong></div></div></div>
+       <div class="allocation-breakdown"><ul class="allocation-legend">${compact}</ul>${more}</div></div>${warning}
        <p class="quiet">Pourcentage principal = part du patrimoine connu. Sous chaque titre CORE : part des actions CORE / cible configurée. Les prix doivent être datés.</p>
-       <div class="actions">${go('invest','Rééquilibrer sur les cibles')}${go('accounts','Voir toutes les actions')}</div></article>`;
+       <div class="actions">${go('invest','Rééquilibrer sur les cibles')}${go('accounts','Voir les comptes')}${btn('new-account','Ajouter une SGI / un compte')}</div></article>`;
+  }
+  const validatedCore=()=>E.symbols.map(s=>s+' '+pct(E.targets[s])).join(' · ');
+  function targetNotice(p) {
+    if(!E.symbols.some(s=>Math.abs((p.targets[s]??0)-E.targets[s])>1e-8)) return '';
+    return `<section class="core-notice" role="status"><strong>Les cibles de ce portefeuille diffèrent des objectifs CORE validés.</strong>
+      <p>Sonatel 30 %, Orange 15 %, CIE 10 %, TotalEnergies 12 %, SMB 9 %, Nestlé 15 %, Palm 9 %.</p>
+      <p class="quiet">Les objectifs ne sont jamais remplacés silencieusement. Aucun cours, titre, frais ou solde ne sera modifié.</p>
+      ${btn('apply-core-targets','Rétablir les objectifs CORE validés','','primary')}</section>`;
   }
   function coreProgress(p) {
-    const actual=Object.fromEntries(E.symbols.map(s=>[s,p.accounts.reduce((sum,a)=>sum+(a.positions[s]?.market||0),0)]));
+    const actual=Object.fromEntries(E.symbols.map(s=>[s,selectedSgiAccounts(p).reduce((sum,a)=>sum+(a.positions[s]?.market||0),0)]));
     const known=Object.values(actual).reduce((n,v)=>n+v,0);
     const rows=E.symbols.map(s=>{
       const weight=known?actual[s]/known:0, target=p.targets[s], diff=weight-target;
@@ -183,8 +216,8 @@
         <div class="core-line"><strong>${esc(s)}</strong><span>${known?pct(weight):'—'} · cible ${pct(target)} · écart ${known?(diff>=0?'+':'')+pct(diff):'—'}</span></div>
         <div class="core-track" aria-label="${esc(s)} actuellement ${pct(weight)}, cible ${pct(target)}"><span style="width:${width}%"></span><i style="left:${targetWidth}%"></i></div></div>`;
     }).join('');
-    const missing=p.accounts.some(a=>E.symbols.some(sym=>(a.positions[sym]?.qty||0)>0 && !(a.positions[sym]?.price>0)));
-    return `<article class="pane"><div class="pane-head"><h2>CORE · actuel contre objectif</h2><p>Le trait clair indique la cible, la barre représente le poids réel dans les actions CORE.</p></div>
+    const missing=selectedSgiAccounts(p).some(a=>E.symbols.some(sym=>(a.positions[sym]?.qty||0)>0 && !(a.positions[sym]?.price>0)));
+    return `<article class="pane"><div class="pane-head"><h2>CORE · ${esc(sgiFilter?institution(sgiFilter):'Toutes les SGI')} face aux cibles du portefeuille</h2><p>Le trait clair indique la cible, la barre représente le poids réel dans les actions CORE.</p></div>
       ${known?rows:empty('Aucune action CORE valorisée. Importez d’abord les cours.')}
       ${missing?'<p class="quiet">Cours manquants : les pourcentages sont incomplets.</p>':''}
       <div class="actions">${go('invest','Acheter les lignes sous-pondérées')}</div></article>`;
@@ -208,6 +241,7 @@
       <div class="kpis">${kpi('Patrimoine du portefeuille',fc(p.total),p.unknown?'Valeur partielle':'Titres et liquidités','accent')}${kpi('Cash disponible',fc(p.available),`${fc(p.reserved)} réservés sur ${fc(p.cash)}`)}
       ${kpi('Plus-value latente',fc(p.pnl),p.unknown?'Positions cotées uniquement':`Coût réel des titres · ${fc(p.cost)}`,p.pnl<0?'loss':'gain')}
       ${kpi('Dividendes nets reçus',fc(p.dividends),`${fc(p.grossDividends)} bruts depuis l’ouverture`)}</div>
+      ${targetNotice(p)}
       ${coreProgress(p)}
       ${points.length>1?pane('Évolution du patrimoine',curve(points),'Valeurs historiques validées et comparables'):''}
       <details class="dashboard-advanced"><summary>Voir le détail des comptes et des analyses</summary>
@@ -217,7 +251,7 @@
   }
   function accountsView() {
     const p=getPortfolio();
-    return `<div class="context compact">${p?portfolioPicker()+field('account','Filtrer les comptes',select('account',[['','Tous les comptes'],...accountsOptions(p.accounts)],accountFilter,'id="account-filter"')):''}<div class="actions">${btn('trade-buy','Acheter','','primary')}${btn('trade-sell','Vendre')}${btn('new-account','Ajouter un compte')}</div></div>
+    return `<div class="context compact">${p?portfolioPicker()+field('account','Filtrer les comptes',select('account',[['','Tous les comptes'],...accountsOptions(p.accounts)],accountFilter,'id="account-filter"')):''}<div class="actions">${btn('trade-buy','Acheter','','primary')}${btn('trade-sell','Vendre')}${btn('new-account','Ajouter une SGI / un compte')}</div></div>
       ${p?.accounts.filter(a=>!accountFilter||a.id===accountFilter).map(a=>pane(accName(a.id),
         `<div class="account-total"><strong>${amountIn(a.total,a.currency)}</strong><span>Cash ${amountIn(a.cash,a.currency)} · Disponible ${amountIn(a.available,a.currency)} · Réservé ${amountIn(a.reserved,a.currency)}</span>
         ${a.currency!=='XOF'?`<p class="quiet">${a.rate?`Contre-valeur indicative ${fc(a.totalXof)} · taux du ${showDate(a.rate.date)} · ${esc(a.rate.source)}${F.stale(a.rate,db.settings.staleDays)?' · taux ancien':''}`:'Taux absent · exclu du total XOF'}</p>`:''}
@@ -235,18 +269,18 @@
     const a=existing||{};
     const options=(list,include)=>list.filter(x=>!x.archived||x.id===include).map(x=>[x.id,x.label]);
     return form('account',
-      field('portfolioId','Portefeuille',select('portfolioId',options(db.portfolios,a.portfolioId),a.portfolioId||portfolioId,a.id?'disabled':''))+
+      field('portfolioId','1. À quel portefeuille rattacher ce compte ?',select('portfolioId',options(db.portfolios,a.portfolioId),a.portfolioId||portfolioId,a.id?'disabled':''))+
       (!a.id?field('newPortfolio','Nouveau portefeuille si nécessaire',input('newPortfolio')):'')+
-      field('institutionId','SGI',select('institutionId',[['','Choisir une SGI'],...options(db.institutions,a.institutionId)],a.institutionId,a.id?'disabled':''))+
-      (!a.id?field('newInstitution','Ou ajouter une nouvelle SGI',input('newInstitution')):'')+
-      field('label','Libellé du compte (facultatif)',input('label',a.label||'','text','maxlength="200"'))+
+      field('institutionId','2. SGI déjà enregistrée',select('institutionId',[['','Choisir une SGI'],...options(db.institutions,a.institutionId)],a.institutionId,a.id?'disabled':''))+
+      (!a.id?field('newInstitution','Ou saisir une nouvelle SGI (prioritaire si remplie)',input('newInstitution','','text','maxlength="200"')):'')+
+      field('label','3. Nom du compte (facultatif)',input('label',a.label||'','text','maxlength="200"'))+
       (!a.id?field('currency','Devise du compte',select('currency',F.currencies.map(c=>[c,c]),'XOF'))+
       field('openedOn','Date d’ouverture',input('openedOn',F.today(),'date','required max="'+F.today()+'"'))+
-      field('cash','Cash initial confirmé dans la devise du compte',money('cash',0)):'')+
+      field('cash','Espèces réellement détenues sur le relevé (0 si compte neuf)',money('cash',0)):'')+
       `<div class="fields">${field('broker','Courtage estimé (%)',input('broker',(a.brokerRate??.01)*100,'number','min="0" max="1" step="0.01" required'))}
       ${field('other','Autres frais estimés (%)',input('other',Math.round((a.otherRate??.006)*10000)/100,'number','min="0" max="10" step="0.01" required'))}</div>`+
       (a.id?`<label class="check"><input name="archived" type="checkbox" ${a.archived?'checked':''}> Archiver le compte</label>`:'')+
-      '<p class="quiet">Les comptes en devises suivent les liquidités. Les titres BRVM et les simulations restent sur les comptes XOF.</p>','Enregistrer le compte',a.id);
+      '<p class="quiet">Ce formulaire crée uniquement le suivi local. Ouvrez d’abord le compte auprès de la SGI. Aucun achat, dépôt, frais ou mensualité fictive n’est créé ; la photographie initiale doit correspondre au relevé.</p>','Enregistrer le compte',a.id);
   }
   function entityForm(group,id) {
     const names={owners:'personne',portfolios:'portefeuille',institutions:'SGI'};
@@ -449,7 +483,8 @@
     return `<div class="context compact">${p?portfolioPicker():''}<p class="quiet">Les cibles s’appliquent au portefeuille sélectionné.</p></div>
       <div class="split">${pane('Cibles CORE',p?form('targets',`<div class="targets">${E.symbols.map(s=>
         field(s,`${s} · ${E.names[s]} (%)`,input(s,Math.round(p.targets[s]*10000)/100,'number','min="0" max="100" step="0.01" required'))).join('')}</div>
-        <p class="quiet">Télécom Sonatel + Orange : ${pct(p.targets.SNTS+p.targets.ORAC)} de la cible CORE. Total des cibles : 100 %.</p>`,
+        <p class="quiet">Télécom Sonatel + Orange : ${pct(p.targets.SNTS+p.targets.ORAC)} de la cible CORE. Total des cibles : 100 %.</p>
+        ${targetNotice(p)}`,
         'Enregistrer les cibles',p.id):empty('Créez un portefeuille pour fixer ses cibles.'))}
       ${pane('Filtrage et vigilance',`<p>Les banques historiques SGBC et CBIB restent en portefeuille. Elles sont exclues des propositions. Toute saisie d’achat exclu requiert un motif.</p>
         <p>Examiner l’activité, les revenus et ratios financiers et les critères du référentiel choisi. Écarter alcool, tabac, jeux et banques à intérêt selon la stratégie du portefeuille.</p>
@@ -529,11 +564,12 @@
   function render() {
     if(!db) return;
     if(!calc.portfolios.some(p=>p.id===portfolioId)) portfolioId=calc.portfolios[0]?.id||'';
+    if(sgiFilter && !calc.portfolios.find(p=>p.id===portfolioId)?.accounts.some(a=>a.institutionId===sgiFilter)) sgiFilter='';
     $('#nav').innerHTML=Object.entries(pages).map(([key,[label,icon]])=>
       `<button type="button" data-page="${key}" ${key===tab?'aria-current="page"':''}><span aria-hidden="true">${icon}</span>${label}</button>`).join('');
     $('#page-title').textContent=pages[tab][0];
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
-    $('#quote-date').textContent=last?'Dernière cote · '+showDate(last):'Aucun cours chargé';
+    $('#quote-date').textContent=last?'Cours enregistrés · '+showDate(last):'Aucun cours chargé';
     $('#view').innerHTML=(V.backupDue(db)?'<section class="backup-banner" role="status"><span><strong>Sauvegarde du mois requise.</strong> Les modifications restent verrouillées.</span>'+btn('monthly-backup','Sauvegarder et vérifier','','primary')+'</section>':'')+
       {dashboard,accounts:accountsView,invest:investment,orders:ordersView,events:eventsView,
       history:historyView,settings:settingsView,data:dataView}[tab]();
@@ -543,6 +579,21 @@
     tab=page; $('#flash').hidden=true;
     document.body.classList.remove('menu-open'); $('#menu').setAttribute('aria-expanded','false');
     render(); $('#view').focus({preventScroll:true}); window.scrollTo(0,0);
+  }
+  function marketUpdateHelp() {
+    const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
+    modal('Mettre à jour les cours BRVM',`
+      <p class="market-update-intro">Dernière séance enregistrée : <strong>${showDate(last)}</strong>.
+      Cette installation n'a actuellement aucun flux automatique autorisé :
+      appuyer sur « Actualiser » ne peut donc pas inventer une nouvelle clôture.</p>
+      <div class="market-update-options">
+        ${btn('quote-import','1. Importer un fichier de cours CSV / JSON','','primary')}
+        <a href="https://brvmdata.com/telechargements/actions-derniere-seance.csv" target="_blank" rel="noopener noreferrer">2. Télécharger les cours de dernière séance (BRVMData)</a>
+        <a href="https://www.brvm.org/fr/marche/bulletin-officiel-de-la-cote" target="_blank" rel="noopener noreferrer">3. Vérifier le Bulletin officiel BRVM</a>
+      </div>
+      <p class="quiet">Importez le CSV téléchargé, puis indiquez sa provenance. L'app conserve la date de séance,
+      la source et la qualité de chaque cotation et refuse les fichiers invalides ou les séances contradictoires.
+      Les titres, les quantités et les espèces ne changent pas lors d'une actualisation des cours.</p>`);
   }
   async function refresh(silent=false) {
     if(refreshing) return;
@@ -656,7 +707,7 @@
     try {
       switch(action) {
         case 'close': close(); break;
-        case 'refresh': void refresh(); break;
+        case 'refresh': if(await Q.feedEnabled()) void refresh(); else marketUpdateHelp(); break;
         case 'import': $('#import').click();break;
         case 'monthly-backup': await exportMonthlyBackup();break;
         case 'legacy':
@@ -671,8 +722,18 @@
           break;
         case 'quote-import': $('#quote-import').click(); break;
         case 'manual-quote': manualQuote(); break;
+        case 'apply-core-targets': {
+          const p=getPortfolio();
+          if(!p) throw Error('Sélectionnez un portefeuille.');
+          modal('Confirmer les objectifs CORE',form('apply-core-targets',
+            '<p>Répartition validée : <strong>Sonatel 30 % · Orange 15 % · CIE 10 % · TotalEnergies 12 % · SMB 9 % · Nestlé 15 % · Palm 9 %</strong></p>'+
+            '<p>Seules les pondérations cibles du portefeuille sélectionné changent ; les titres et espèces sont conservés.</p>'+
+            '<label class="check"><input type="checkbox" name="confirmed" required> Appliquer cette répartition à mon portefeuille.</label>',
+            'Appliquer les cibles',p.id));
+          break;
+        }
         case 'new-account':
-          if(store.protected || db.accounts.length) modal('Ajouter un compte',accountForm());
+          if(store.protected || db.accounts.length) modal('Ajouter une SGI / un compte',accountForm());
           else modal('Protéger votre premier compte',form('protect',phraseFields(),'Activer le coffre et créer un compte','account'));
           break;
         case 'entity': entityForm(...id.split('|')); break;
@@ -800,6 +861,16 @@
     let next, message='Enregistré sur cet appareil.', replace=false, page;
     try {
       switch(type) {
+        case 'apply-core-targets': {
+          if(!f.has('confirmed')) throw Error('Confirmez les nouvelles cibles.');
+          next=structuredClone(db);
+          const target=next.portfolios.find(p=>p.id===id);
+          if(!target) throw Error('Portefeuille introuvable.');
+          target.targets={...E.targets};
+          plan=null;comparison=null;planInputs=null;
+          message='Cibles CORE rétablies : Sonatel 30 %, total 100 %. Les positions sont inchangées.';
+          break;
+        }
         case 'account': {
           next=structuredClone(db);
           let a=next.accounts.find(x=>x.id===id);
@@ -814,7 +885,10 @@
             }
             let i=next.institutions.find(x=>x.id===f.get('institutionId'));
             const sgi=trim(f,'newInstitution');
-            if(sgi) {i={id:F.id(),label:sgi};next.institutions.push(i);}
+            if(sgi) {
+              i=next.institutions.find(existing=>existing.label.trim().toLocaleLowerCase('fr')===sgi.toLocaleLowerCase('fr'));
+              if(!i) {i={id:F.id(),label:sgi};next.institutions.push(i);}
+            }
             if(!i) throw Error('Choisir ou nommer une SGI.');
             a={id:F.id(),portfolioId:p.id,institutionId:i.id,currency:f.get('currency'),cash:number(f,'cash'),reserved:0,openedOn:f.get('openedOn')};
             if(a.cash && next.observations.some(o=>o.portfolioId===p.id)) throw Error('Pour préserver les performances observées, créez le compte à zéro puis saisissez le montant crédité sur justificatif.');
@@ -1034,7 +1108,8 @@
       options.hidden=el.value!=='manuel';
       if(!options.hidden) options.closest('details').open=true;
     }
-    if(el.matches('#portfolio')) {portfolioId=el.value;accountFilter='';plan=null;comparison=null;planInputs=null;render();$('#portfolio')?.focus();}
+    if(el.matches('#portfolio')) {portfolioId=el.value;sgiFilter='';accountFilter='';plan=null;comparison=null;planInputs=null;render();$('#portfolio')?.focus();}
+    if(el.matches('#sgi-view')) {sgiFilter=el.value;render();$('#sgi-view')?.focus();}
     if(el.matches('#account-filter')) {accountFilter=el.value;render();$('#account-filter')?.focus();}
     if(el.matches('#history-month')) {historyMonth=el.value;journalLimit=40;render();$('#history-month')?.focus();}
     if(el.closest('form[data-form=tx]') && ['type','accountId','toAccountId'].includes(el.name)) {transactionFields(el.form);tradePreview(el.form);}

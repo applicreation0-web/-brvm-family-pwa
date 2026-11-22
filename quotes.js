@@ -91,6 +91,18 @@
       return result+decoder.decode();
     } finally {await reader.cancel().catch(()=>{});}
   }
+  // The public shell is shipped without an authorized live redistribution feed.
+  // Fail closed and prefer user-initiated, provenance-checked local CSV import.
+  async function feedEnabled(fetcher=fetch) {
+    try {
+      const response=await fetcher('./market/feed.json',{method:'GET',credentials:'same-origin',
+        referrerPolicy:'no-referrer',cache:'no-store',signal:AbortSignal.timeout(10000),redirect:'error'});
+      if(!response.ok) return false;
+      const policy=JSON.parse(await readLimit(response,8192));
+      return policy?.enabled===true && typeof policy.source==='string' &&
+        typeof policy.authorization==='string' && !!policy.authorization.trim();
+    } catch {return false;}
+  }
   async function online(fetcher=fetch) {
     const options={method:'GET',credentials:'same-origin',referrerPolicy:'no-referrer',cache:'no-store',
       signal:AbortSignal.timeout(10000),redirect:'error'};
@@ -106,5 +118,5 @@
     if(!r.ok) throw Error('Flux de cotations indisponible.');
     return parse(await readLimit(r,MAX_CSV),{source:policy.source,official:policy.bulletinBasis===true,retrievedOn:F.today()});
   }
-  return {parse,parseManual,online,URL};
+  return {parse,parseManual,online,feedEnabled,URL};
 });

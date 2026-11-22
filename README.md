@@ -1,4 +1,4 @@
-# BRVM Family V3.1 — GitHub Pages et APK Android
+# BRVM Family V3.2 — GitHub Pages et APK Android
 
 PWA indépendante, hébergée directement sur GitHub Pages. Aucun hébergement Vercel ou constructeur d'applications n'est nécessaire.
 
@@ -15,6 +15,15 @@ Sur Android, ouvrir l'adresse dans Chrome puis installer l'application depuis le
 - **Dividendes et opérations sur titres** : encaissement net après prélèvements, fractionnements/regroupements, actions gratuites, droits, dividendes en actions et expiration de droits, sur justificatifs réels.
 - **Historique** : ventes, dividendes, liquidités, gains réalisés et frais, sans simulation imposée d'apports mensuels. Les données stockées restent locales, sans transmission de transactions à une SGI.
 - **Qualification** : tests financiers des parcours achat/vente et des droits, sauvegarde mensuelle et confidentialité, recette Chromium mobile sur portefeuille fictif, APK Android hors ligne et versionCode augmenté pour mise à jour avec la même signature privée.
+
+## V3.2 — couleurs, SGI, objectifs et cours
+- **Camembert filtrable** : Toutes les SGI, FGI, CGF ou autre SGI dans le portefeuille sélectionné. Le total et les pondérations du camembert et la comparaison CORE/cible suivent le filtre ; le patrimoine global demeure explicitement global.
+- **Couleurs distinctes** : couleur fixe par symbole, contrastes catégoriels, traits sombres entre parts, légende avec code et pourcentage. Filtrer ne recolorie jamais un titre. Au-delà de six titres, détails accessibles d'un geste.
+- **Cibles CORE validées** : Sonatel 30 %, Orange 15 %, CIE 10 %, TotalEnergies 12 %, SMB 9 %, Nestlé 15 %, Palm 9 % ; total 100 %. Les nouveaux portefeuilles héritent de ces cibles. Un portefeuille importé conservant de vieilles cibles peut les rétablir explicitement, sans changer ses positions, espèces ou ordres. Pas de réécriture silencieuse des données importées.
+- **Nouvelle SGI / compte** : accès direct depuis le camembert et Comptes ; sélectionner le portefeuille et une SGI existante ou saisir une nouvelle dénomination. Espèces initiales 0, mensualité 0, aucun achat inventé. BRVM Family n'ouvre pas de compte de courtage ; évite de dupliquer une SGI existante sous le même nom.
+- **Cotation BRVM** : aucun flux automatique autorisé n'est configuré dans la version distribuée (market/feed.json désactivé). Le bouton « Cours BRVM » guide vers un fichier CSV/JSON local téléchargé, et vers la vérification par le Bulletin officiel. Import contrôlé par date, qualité, provenance et doublons. Aucun cours n'est inventé.
+- **Android** : version 3.2.0, versionCode 3, même package. Mettre à jour sans désinstaller exige la même clé de signature privée.
+- **Qualification** : tests sur comptes strictement fictifs pour l'ergonomie, le filtre SGI (y compris compte sans titre), l'identité couleur, les cibles CORE, les opérations et les sauvegardes.
 
 ## Confidentialité
 L'application distribuée est **entièrement vierge**. Aucune identité, aucun compte, aucun solde, aucun investissement ou historique personnel n'est intégré au dépôt, au build ni à GitHub Pages. Import JSON volontaire, puis coffre chiffré local sur chaque appareil. Aucun JSON privé ne doit être ajouté au dépôt, à ses issues ou à ses releases.
