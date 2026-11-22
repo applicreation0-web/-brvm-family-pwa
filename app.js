@@ -241,7 +241,7 @@
       (!a.id?field('currency','Devise du compte',select('currency',F.currencies.map(c=>[c,c]),'XOF'))+
       field('openedOn','Date d’ouverture',input('openedOn',F.today(),'date','required max="'+F.today()+'"'))+
       field('cash','Cash initial confirmé dans la devise du compte',money('cash',0)):'')+
-      `<div class="fields">${field('monthly','Versement mensuel (FCFA)',money('monthly',a.monthly??'',false))}${field('broker','Courtage estimé (%)',input('broker',(a.brokerRate??.01)*100,'number','min="0" max="1" step="0.01" required'))}
+      `<div class="fields">${field('broker','Courtage estimé (%)',input('broker',(a.brokerRate??.01)*100,'number','min="0" max="1" step="0.01" required'))}
       ${field('other','Autres frais estimés (%)',input('other',Math.round((a.otherRate??.006)*10000)/100,'number','min="0" max="10" step="0.01" required'))}</div>`+
       (a.id?`<label class="check"><input name="archived" type="checkbox" ${a.archived?'checked':''}> Archiver le compte</label>`:'')+
       '<p class="quiet">Les comptes en devises suivent les liquidités. Les titres BRVM et les simulations restent sur les comptes XOF.</p>','Enregistrer le compte',a.id);
@@ -463,20 +463,17 @@
   }
   function historyView() {
     const p=getPortfolio();
-    const monthly=p?p.accounts.reduce((n,a)=>n+a.monthly,0):250000;
-    const monthlyInput=projectInputs.monthly??monthly;
     const perf=p?A.performance(db,p.id):{twr:null,xirr:null,gain:null,observations:[]};
     const txs=db.transactions.filter(t=>!historyMonth||t.date.startsWith(historyMonth)).slice().reverse();
-    const scenarios=[['Prudent',-.05],['Stable',0],['Favorable',.05]].map(([label,r])=>[label,r,A.project(p?.total||0,monthlyInput,r,projectInputs.dividend,projectInputs.fee)]);
-    return `<div class="context compact">${p?portfolioPicker():''}<div class="actions">${btn('transaction','Saisir une opération','','primary')}${btn('export-journal','Exporter le journal CSV')}${db.asOf&&db.accounts.length?btn('opening-proof','Rapprocher une archive')+btn('opening-revise','Corriger la photographie'):''}</div></div>
+    return `<div class="context compact">${p?portfolioPicker():''}<div class="actions">${btn('trade-buy','Acheter','','primary')+btn('trade-sell','Vendre')+btn('dividend-received','Dividende')}${btn('export-journal','Exporter le journal CSV')}${db.asOf&&db.accounts.length?btn('opening-proof','Rapprocher une archive')+btn('opening-revise','Corriger la photographie'):''}</div></div>
       <div class="split">${pane('Performance observée',`<div class="mini-kpis">${kpi('TWR',pct(perf.twr))}${kpi('XIRR annualisé',pct(perf.xirr))}${kpi('Gain net des apports',perf.gain===null?'—':fc(perf.gain))}</div>
         <p class="quiet">TWR calculé sur des intervalles valorisés sans flux. XIRR utilise les flux datés et exige une solution identifiable. Les tirets signalent des observations insuffisantes.</p>`+
         curve(perf.observations.filter(o=>o.complete)))}
-      ${pane('Projection à cinq ans',form('projection',`<div class="fields">${field('monthly','Versement mensuel',money('monthly',monthlyInput))}
-        ${field('fee','Frais d’achat (%)',input('fee',Math.round(projectInputs.fee*10000)/100,'number','min="0" max="10" step="0.01" required'))}
-        ${field('dividend','Dividende net réinvesti (%)',input('dividend',Math.round(projectInputs.dividend*10000)/100,'number','min="0" max="30" step="0.01" required'))}</div>`,'Recalculer')+
-        table(['Hypothèse prix annuelle','Année 1','Année 3','Année 5'],scenarios.map(([name,r,pr])=>[name+' · '+pct(r),fc(pr.values[1]),fc(pr.values[3]),fc(pr.values[5])]))+
-        `<p class="quiet">Hypothèses, dividendes nets réinvestis à ${pct(projectInputs.dividend)} par an. Apports prévus ${fc(monthlyInput*60)}, frais sur apports ${fc(monthlyInput*60*projectInputs.fee)} sur cinq ans.</p>`)}</div>
+      ${pane('Situation financière',p?table(['Indicateur','Montant'],[
+        ['Actions valorisées',fc(p.market)],['Espèces disponibles',fc(p.available)],
+        ['Frais et taxes enregistrés',fc(p.feesPaid+p.taxes)],
+        ['Plus-value réalisée sur ventes',fc(p.realized)],['Dividendes nets encaissés',fc(p.dividends)]
+      ]):empty('Aucun portefeuille sélectionné'))}</div>
       ${pane('Journal des écritures locales',`<div class="context compact">${field('month','Filtrer par mois',input('month',historyMonth,'month','id="history-month"'))}<span class="quiet">${txs.length} écritures</span></div>`+
         table(['Date','Compte','Opération','Montant','Référence','Actions'],txs.slice(0,journalLimit).map(journalRow))+
         (txs.length>journalLimit?`<div class="actions">${btn('history-more','Afficher 40 écritures de plus')}</div>`:''))}
@@ -803,8 +800,7 @@
           a.label=trim(f,'label');
           const broker=institution(a.institutionId)||'';
           const newSgi=next.institutions.find(x=>x.id===a.institutionId)?.label||broker;
-          const hasMonthly=next.accounts.some(x=>x.id!==a.id&&x.portfolioId===a.portfolioId&&x.institutionId===a.institutionId);
-          a.monthly=a.currency!=='XOF'?0:trim(f,'monthly')?number(f,'monthly'):hasMonthly?0:{FGI:100000,CGF:150000}[newSgi.toUpperCase()]||0;
+          a.monthly=0; // Aucune mensualité : tout investissement est ponctuel.
           a.brokerRate=number(f,'broker')/100; a.otherRate=number(f,'other')/100;
           a.archived=f.has('archived');
           portfolioId=a.portfolioId;
@@ -829,10 +825,9 @@
         }
         case 'invest': {
           const accountIds=f.getAll('accounts');
-          planInputs={mode:f.get('mode'),budget:number(f,'budget'),accountIds,exceptional:f.has('exceptional'),verifiedOnly:f.has('verifiedOnly'),
-            manual:Object.fromEntries(accountIds.map(id=>[id,number(f,'manual_'+id)]))};
+          planInputs={mode:'cibles',budget:number(f,'budget'),accountIds,exceptional:true,verifiedOnly:f.has('verifiedOnly')};
           plan=F.propose(db,{portfolioId,...planInputs});
-          comparison=accountIds.length===2?F.propose(db,{portfolioId,...planInputs,mode:plan.mode==='mensuel'?'equilibre':'mensuel'}):null;
+          comparison=null;
           render();return;
         }
         case 'opening-revise': {
@@ -933,8 +928,6 @@
           break;
         case 'stale':
           next=structuredClone(db);next.settings.staleDays=number(f,'days');next.settings.autoQuotes=f.has('autoQuotes');break;
-        case 'projection':
-          projectInputs={monthly:number(f,'monthly'),fee:number(f,'fee')/100,dividend:number(f,'dividend')/100};render();return;
         case 'quotes-import': {
           const r=F.quoteUpdates(db,Q.parseManual(quoteOptions,{source:trim(f,'source'),official:f.has('official'),retrievedOn:F.today()}));
           next=r.next;message=r.count+' cotations acceptées.';break;
@@ -984,7 +977,7 @@
           localChannel?.postMessage('reset');
           try {localStorage.setItem(resetKey,String(reset.revision));localStorage.removeItem(resetKey);} catch {}
           close();portfolioId='';accountFilter='';historyMonth='';journalLimit=40;archiveLimit=40;
-          plan=null;comparison=null;planInputs=null;projectInputs={monthly:null,fee:.016,dividend:.03};
+          plan=null;comparison=null;planInputs=null;
           await load(reset);goTo('dashboard');notify('Données de cette installation effacées.');
           if(f.has('older')) await V.removeLegacy();
           return;
@@ -1010,7 +1003,7 @@
       options.hidden=el.value!=='manuel';
       if(!options.hidden) options.closest('details').open=true;
     }
-    if(el.matches('#portfolio')) {portfolioId=el.value;accountFilter='';plan=null;comparison=null;planInputs=null;projectInputs.monthly=null;render();$('#portfolio')?.focus();}
+    if(el.matches('#portfolio')) {portfolioId=el.value;accountFilter='';plan=null;comparison=null;planInputs=null;render();$('#portfolio')?.focus();}
     if(el.matches('#account-filter')) {accountFilter=el.value;render();$('#account-filter')?.focus();}
     if(el.matches('#history-month')) {historyMonth=el.value;journalLimit=40;render();$('#history-month')?.focus();}
     if(el.closest('form[data-form=tx]') && ['type','accountId','toAccountId'].includes(el.name)) transactionFields(el.form);
