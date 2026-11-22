@@ -118,7 +118,7 @@ def check(first, second):
         expect(page.get_by_text('Cotation enregistrée.')).to_be_visible()
         page.locator('#nav [data-page=dashboard]').press('Enter')
         expect(page.locator('.allocation-pie')).to_be_visible()
-        expect(page.get_by_role('heading', name='CORE · actuel contre objectif')).to_be_visible()
+        expect(page.get_by_role('heading', name='CORE · Toutes les SGI face aux cibles du portefeuille')).to_be_visible()
         expect(page.get_by_role('button', name='Acheter', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name='Vendre', exact=True)).to_be_visible()
         # Vendre 2 actions avec frais vrais, puis racheter une action sur avis.
@@ -157,13 +157,62 @@ def check(first, second):
         shots=ROOT / 'test_artifacts'
         shots.mkdir(exist_ok=True)
         page.screenshot(path=str(shots / 'dashboard_fictif_android_390px.png'),full_page=True)
+        # Les objectifs privés anciens ne changent pas silencieusement : restauration explicite et vérifiée.
+        page.locator('#nav [data-page=settings]').press('Enter')
+        targets=page.locator('form[data-form=targets]')
+        for sym,value in [('SNTS','25'),('ORAC','15'),('CIEC','10'),('TOCI','15'),
+                          ('SMBC','10'),('NTLC','15'),('PALC','10')]:
+            targets.locator('[name='+sym+']').fill(value)
+        targets.locator('button[type=submit]').click()
+        page.locator('#nav [data-page=dashboard]').press('Enter')
+        notice=page.locator('.core-notice').first
+        expect(notice).to_be_visible()
+        expect(notice.get_by_text('Sonatel 30 %', exact=False)).to_be_visible()
+        notice.get_by_role('button', name='Rétablir les objectifs CORE validés').click()
+        confirm=page.get_by_role('dialog')
+        confirm.locator('[name=confirmed]').check()
+        confirm.locator('button[type=submit]').click()
+        expect(page.locator('.core-notice')).to_have_count(0)
+        expect(page.get_by_text('cible 30 %', exact=False).first).to_be_visible()
+
+        # Nouvelle SGI sur le même portefeuille ; zéro achat/dépôt, répartition globale inchangée.
+        initial_total=page.locator('.total').text_content()
+        original_color=page.locator('.allocation-legend li').filter(has_text='SNTS').first.locator('i').evaluate(
+            '(el)=>getComputedStyle(el).backgroundColor')
+        assert original_color=='rgb(0, 168, 107)', original_color
+        page.get_by_role('button', name='Ajouter une SGI / un compte').click()
+        new_account=page.get_by_role('dialog')
+        new_account.locator('[name=newInstitution]').fill('SGI supplémentaire')
+        new_account.locator('[name=label]').fill('Compte deuxième SGI')
+        new_account.locator('button[type=submit]').click()
+        expect(new_account).not_to_be_visible()
+        page.locator('#nav [data-page=dashboard]').press('Enter')
+        assert page.locator('.total').text_content()==initial_total
+        first_sgi=page.locator('#sgi-view option').filter(has_text='SGI fictive E2E').get_attribute('value')
+        other_sgi=page.locator('#sgi-view option').filter(has_text='SGI supplémentaire').get_attribute('value')
+        assert first_sgi and other_sgi!=first_sgi
+        page.locator('#sgi-view').select_option(first_sgi)
+        expect(page.locator('.allocation-pie')).to_be_visible()
+        assert page.locator('.allocation-legend li').filter(has_text='SNTS').first.locator('i').evaluate(
+            '(el)=>getComputedStyle(el).backgroundColor')==original_color
+        page.locator('#sgi-view').select_option(other_sgi)
+        expect(page.get_by_text('Aucun titre valorisé ni espèces sur cette sélection.', exact=False)).to_be_visible()
+        expect(page.locator('#sgi-view')).to_be_visible()
+        page.locator('#sgi-view').select_option('')
+        expect(page.locator('.allocation-pie')).to_be_visible()
+        assert page.locator('.total').text_content()==initial_total
+
         total=page.locator('.total').text_content()
         page.evaluate('navigator.serviceWorker.ready.then(() => true)')
         for width in (360, 412, 768, 1366):
             page.set_viewport_size({'width': width, 'height': 900})
             assert page.evaluate('document.documentElement.scrollWidth === document.documentElement.clientWidth')
-        page.get_by_role('button', name='Actualiser les cours').click()
-        expect(page.get_by_text('Les cours locaux sont conservés.')).to_be_visible()
+        page.get_by_role('button', name='Cours BRVM').click()
+        market=page.get_by_role('dialog')
+        expect(market.get_by_role('heading', name='Mettre à jour les cours BRVM')).to_be_visible()
+        expect(market.get_by_text("aucun flux automatique autorisé", exact=False)).to_be_visible()
+        expect(market.get_by_role('button', name='1. Importer un fichier de cours CSV / JSON')).to_be_visible()
+        market.get_by_role('button', name='Fermer').click()
         page.locator('#nav [data-page=data]').press('Enter')
         page.get_by_role('button', name='Exporter chiffré').click()
         dialog = page.get_by_role('dialog')
