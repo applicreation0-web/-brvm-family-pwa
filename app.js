@@ -173,21 +173,42 @@
        <p class="quiet">Pourcentage principal = part du patrimoine connu. Sous chaque titre CORE : part des actions CORE / cible configurée. Les prix doivent être datés.</p>
        <div class="actions">${go('invest','Rééquilibrer sur les cibles')}${go('accounts','Voir toutes les actions')}</div></article>`;
   }
+  function coreProgress(p) {
+    const actual=Object.fromEntries(E.symbols.map(s=>[s,p.accounts.reduce((sum,a)=>sum+(a.positions[s]?.market||0),0)]));
+    const known=Object.values(actual).reduce((n,v)=>n+v,0);
+    const rows=E.symbols.map(s=>{
+      const weight=known?actual[s]/known:0, target=p.targets[s], diff=weight-target;
+      const width=Math.min(100,Math.round(weight*100)),targetWidth=Math.min(100,Math.round(target*100));
+      return `<div class="core-progress">
+        <div class="core-line"><strong>${esc(s)}</strong><span>${known?pct(weight):'—'} · cible ${pct(target)} · écart ${known?(diff>=0?'+':'')+pct(diff):'—'}</span></div>
+        <div class="core-track" aria-label="${esc(s)} actuellement ${pct(weight)}, cible ${pct(target)}"><span style="width:${width}%"></span><i style="left:${targetWidth}%"></i></div></div>`;
+    }).join('');
+    const missing=p.accounts.some(a=>E.symbols.some(sym=>(a.positions[sym]?.qty||0)>0 && !(a.positions[sym]?.price>0)));
+    return `<article class="pane"><div class="pane-head"><h2>CORE · actuel contre objectif</h2><p>Le trait clair indique la cible, la barre représente le poids réel dans les actions CORE.</p></div>
+      ${known?rows:empty('Aucune action CORE valorisée. Importez d’abord les cours.')}
+      ${missing?'<p class="quiet">Cours manquants : les pourcentages sont incomplets.</p>':''}
+      <div class="actions">${go('invest','Acheter les lignes sous-pondérées')}</div></article>`;
+  }
+  function quickActions() {
+    return `<nav class="quick-actions" aria-label="Opérations essentielles">
+      ${btn('trade-buy','Acheter','','primary')}${btn('trade-sell','Vendre')}
+      ${btn('dividend-received','Dividende')}${btn('corporate-action','Opérations sur titres')}
+      ${btn('monthly-backup','Sauvegarder')}</nav>`;
+  }
   function dashboard() {
     if(!db.accounts.length) return welcome();
     const p=getPortfolio()||calc.portfolios[0], all=calc.all;
     const orderCount=db.orders.filter(o=>!['RAPPROCHÉ','ANNULÉ','NON EXÉCUTÉ'].includes(o.status)).length;
     const quotes=Object.values(db.quotes);
     const old=p.accounts.reduce((n,a)=>n+Object.values(a.positions).filter(x=>x.qty&&F.stale(x.quote,db.settings.staleDays)).length,0);
-    const composition=new Map();
-    for(const a of p.accounts) for(const x of Object.values(a.positions)) if(x.market)
-      composition.set(x.symbol,(composition.get(x.symbol)||0)+x.market);
     const points=db.observations.filter(x=>x.portfolioId===p.id&&x.complete&&x.attestation==='close-v1').sort((a,b)=>a.date.localeCompare(b.date));
-    return `<div class="context"><div><p class="overline">Patrimoine familial${all.unknown?' · valorisation partielle':''}</p><strong class="total">${fc(all.total)}</strong><p class="quiet">${db.accounts.length} comptes · ${db.portfolios.length} portefeuilles · ${calc.institutions.length} SGI</p></div>${portfolioPicker()}</div>
+    return `<div class="context"><div><p class="overline">Portefeuille ${p.unknown?'· cours incomplets':''}</p><strong class="total">${fc(p.total)}</strong><p class="quiet">${p.accounts.length} compte(s) · Patrimoine familial connu : ${fc(all.total)}</p></div>${portfolioPicker()}</div>
+      ${quickActions()}
+      ${allocationVisual(p)}
       <div class="kpis">${kpi('Patrimoine du portefeuille',fc(p.total),p.unknown?'Valeur partielle':'Titres et liquidités','accent')}${kpi('Cash disponible',fc(p.available),`${fc(p.reserved)} réservés sur ${fc(p.cash)}`)}
       ${kpi('Plus-value latente',fc(p.pnl),p.unknown?'Positions cotées uniquement':`Coût réel des titres · ${fc(p.cost)}`,p.pnl<0?'loss':'gain')}
       ${kpi('Dividendes nets reçus',fc(p.dividends),`${fc(p.grossDividends)} bruts depuis l’ouverture`)}</div>
-      ${allocationVisual(p)}
+      ${coreProgress(p)}
       <div class="split">${pane('Évolution enregistrée',curve(points),'Séances avec cotations et taux documentés')}${pane('Répartition par SGI',bars(calc.institutions.map(i=>({label:i.label,value:p.accounts.filter(a=>a.institutionId===i.id).reduce((n,a)=>n+(a.totalXof??0),0)}))))}</div>
       <div class="split">${pane('Suivi depuis l’ouverture',table(['Indicateur','Valeur'],[['Frais et taxes comptabilisés',fc(p.feesPaid+p.taxes)],['Gains réalisés',fc(p.realized)],['Apports nets',fc(p.netContribution)],['Ordres à suivre',orderCount],['Cours absents ou anciens',old],['Cours disponibles',quotes.length]])+`<div class="actions">${go('orders','Consulter les ordres')}</div>`)}</div>
       ${pane('Comptes familiaux',table(['Compte','Titres','Cash disponible','Patrimoine'],calc.accounts.map(a=>[esc(accName(a.id)),fc(a.market),amountIn(a.available,a.currency),a.totalXof==null?'Taux absent':fc(a.totalXof)]))) }`;
@@ -500,7 +521,7 @@
     $('#page-title').textContent=pages[tab][0];
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
     $('#quote-date').textContent=last?'Dernière cote · '+showDate(last):'Aucun cours chargé';
-    $('#view').innerHTML=(V.backupDue(db)?'<section class="pane" role="alert"><h2>Sauvegarde JSON mensuelle obligatoire</h2><p>La consultation reste disponible, mais les nouvelles opérations sont suspendues jusqu’à la vérification de la sauvegarde du mois.</p>'+btn('monthly-backup','Télécharger et vérifier le ZIP','','primary')+'</section>':'')+
+    $('#view').innerHTML=(V.backupDue(db)?'<section class="backup-banner" role="status"><span><strong>Sauvegarde du mois requise.</strong> Les modifications restent verrouillées.</span>'+btn('monthly-backup','Sauvegarder et vérifier','','primary')+'</section>':'')+
       {dashboard,accounts:accountsView,invest:investment,orders:ordersView,events:eventsView,
       history:historyView,settings:settingsView,data:dataView}[tab]();
   }
