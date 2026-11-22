@@ -6,7 +6,7 @@
 })(globalThis, E => {
   'use strict';
   const schema = 'brvm-family-v3';
-  const kinds = ['DEPOSIT','WITHDRAW','BUY','SELL','FEE','DIVIDEND','SPLIT','BONUS','RIGHTS','STOCK_DIVIDEND','TRANSFER','CORRECTION'];
+  const kinds = ['DEPOSIT','WITHDRAW','BUY','SELL','FEE','DIVIDEND','SPLIT','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY','TRANSFER','CORRECTION'];
   const pending = ['TRANSMIS','PARTIELLEMENT EXÉCUTÉ','EXÉCUTÉ'];
   const statuses = ['PROJET',...pending,'RAPPROCHÉ','ANNULÉ','NON EXÉCUTÉ'];
   const banks = new Set(['SGBC','CBIB']);
@@ -225,10 +225,10 @@
       fail(event && event.accountId===t.accountId && event.symbol===t.symbol && t.date>=event.date && (removed || event.status==='PAYÉ'),
         'Paiement incompatible avec le calendrier.');
     }
-    if(['BUY','SELL','DIVIDEND','SPLIT','BONUS','RIGHTS','STOCK_DIVIDEND'].includes(t.type))
+    if(['BUY','SELL','DIVIDEND','SPLIT','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY'].includes(t.type))
       fail(symbol(t.symbol), 'Titre invalide.');
     if(['DEPOSIT','WITHDRAW','FEE','TRANSFER'].includes(t.type)) fail(cent(t.amount)>0,'Montant positif obligatoire.');
-    if(['BUY','SELL','BONUS','RIGHTS','STOCK_DIVIDEND'].includes(t.type))
+    if(['BUY','SELL','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY'].includes(t.type))
       fail(num(t.qty,.000001) && (isFund(d,t.symbol) || Number.isSafeInteger(t.qty)), 'Quantité invalide pour cet instrument.');
     if(['BUY','SELL'].includes(t.type)) {
       fail(cent(t.price)>0,'Cours d’exécution positif obligatoire.');
@@ -242,12 +242,24 @@
     if(t.type==='DIVIDEND') {
       fail(cent(t.gross)>0 && cent(t.gross)>=cent(t.tax || 0)+cent(t.other ?? t.fees ?? 0),'Montant net du dividende invalide.');
       if(!t.legacy && isFund(d,t.symbol)) fail(t.cashDistribution===true && d.instruments[t.symbol].distribution!=='capitalizing','Un FCP nécessite une distribution en cash attestée hors VL.');
+      if(t.dividendBasis) {
+        const b=t.dividendBasis;
+        fail(date(b.recordDate)&&b.recordDate<=t.date&&
+          Number.isSafeInteger(b.eligibleQty)&&b.eligibleQty>0&&cent(b.grossPerShare)>0&&
+          b.eligibleQty*cent(b.grossPerShare)===cent(t.gross),
+          'Dividende par action : quantité éligible, montant brut unitaire et date incohérents.');
+      }
     }
     if(t.type==='SPLIT')
       fail(Number.isSafeInteger(t.ratioFrom) && Number.isSafeInteger(t.ratioTo) && t.ratioFrom>0 && t.ratioTo>0 &&
         t.ratioFrom!==t.ratioTo && (t.legacy || text(t.source)), 'Ratio ou source du fractionnement invalide.');
     if(['BONUS','RIGHTS','STOCK_DIVIDEND'].includes(t.type) && !t.legacy)
       fail(date(t.recordDate) && t.recordDate<=t.date && text(t.source),'Date d’enregistrement et source requises.');
+    if(t.type==='RIGHTS_EXPIRY') {
+      const wasRight=d.instruments[t.symbol]?.kind==='DROIT' ||
+        d.transactions.some(x=>x.type==='RIGHTS'&&x.symbol===t.symbol&&x.accountId===t.accountId&&x.date<=t.date);
+      fail(wasRight && text(t.source),'Expiration : droit identifié et avis du courtier exigés.');
+    }
     if(t.type==='TRANSFER') {
       const from=entities.accounts.get(t.accountId), to=entities.accounts.get(t.toAccountId);
       fail(to && (!to.openedOn||t.date>=to.openedOn) && from.id!==to.id && entities.portfolios.get(from.portfolioId).ownerId===entities.portfolios.get(to.portfolioId).ownerId,
@@ -261,7 +273,7 @@
     }
   }
   const correctionTargets=d=>new Set(d.transactions.filter(t=>t.type==='CORRECTION'&&t.replay===true).map(t=>t.corrects));
-  const correctable=['DEPOSIT','WITHDRAW','FEE','TRANSFER','BUY','SELL','DIVIDEND','BONUS','RIGHTS','STOCK_DIVIDEND'];
+  const correctable=['DEPOSIT','WITHDRAW','FEE','TRANSFER','BUY','SELL','DIVIDEND','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY'];
   function ledger(d, entities=validate(d), through=null) {
     const accounts = new Map(d.accounts.map(a=>[a.id,{...a,cash:cent(a.cash),openingReserved:cent(a.reserved),
       market:0,cost:0,realized:0,dividends:0,grossDividends:0,feesPaid:0,netContribution:0,transferred:0,taxes:0,positions:Object.create(null)}]));
@@ -363,6 +375,14 @@
         case 'BONUS':
         case 'RIGHTS':
         case 'STOCK_DIVIDEND': s.qty+=t.qty; break;
+        case 'RIGHTS_EXPIRY': {
+          fail(s.qty+1e-9>=t.qty,'Expiration supérieure aux droits détenus.');
+          const released=Math.abs(t.qty-s.qty)<1e-9?s.cost:Math.round(s.cost*t.qty/s.qty);
+          s.qty=Math.max(0,s.qty-t.qty);
+          s.cost-=released;
+          a.realized-=released; // Book value written off; no invented cash
+          break;
+        }
         case 'CORRECTION': {
           const original=entities.transactions.get(t.corrects);
           fail(original && !['SPLIT','CORRECTION'].includes(original.type) && !original.eventId &&
@@ -386,6 +406,19 @@
   }
   function validateEntitlements(d, entities) {
     const removed=correctionTargets(d), balances=new Map();
+    for(const t of d.transactions.filter(t=>t.type==='DIVIDEND'&&t.dividendBasis&&!removed.has(t.id))) {
+      const basis=t.dividendBasis;
+      if(!d.asOf||basis.recordDate<d.asOf) {
+        fail(text(basis.statementRef,4,180),
+          'Avis du courtier requis pour un dividende dont la date d’éligibilité précède la photographie.');
+      } else {
+        if(!balances.has(basis.recordDate))
+          balances.set(basis.recordDate,ledger(d,entities,basis.recordDate).accounts);
+        const eligible=balances.get(basis.recordDate).get(t.accountId)?.positions[t.symbol]?.qty||0;
+        fail(basis.eligibleQty<=eligible,
+          'Dividende : quantité éligible supérieure aux titres détenus à la date d’enregistrement.');
+      }
+    }
     for(const t of d.transactions.filter(t=>t.entitlement&&!removed.has(t.id))) {
       const e=t.entitlement;
       fail(['BONUS','RIGHTS','STOCK_DIVIDEND'].includes(t.type) && symbol(e.underlying) &&

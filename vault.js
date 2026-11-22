@@ -221,27 +221,204 @@
   const same=(a,b)=>signature(a)===signature(b);
   function merge(current,incoming) {
     if(same(current,incoming)) return current;
-    // A disjoint addition is provable for entities that share precisely the same snapshot and valuation settings.
-    const entities=['owners','portfolios','institutions','accounts','positions','transactions','orders','plans','events','attachments'];
-    const baseline=data=>Object.fromEntries(Object.entries(data).filter(([k])=>!entities.includes(k)));
+    // Each independent account may share the exact same owner, portfolio and SGI
+    // with another import. All other account data must be strictly disjoint.
+    // A common snapshot baseline is mandatory; never merge differing quotes,
+    // opening snapshots or configuration implicitly.
+    const entities=['owners','portfolios','institutions','accounts','positions','transactions',
+      'orders','plans','events','attachments','history'];
+    const baseline=data=>{
+      const value=Object.fromEntries(Object.entries(data).filter(([k])=>!entities.includes(k)));
+      if(value.settings) {
+        value.settings=structuredClone(value.settings);
+        delete value.settings.monthlyBackup; // a backup stamp is device-local evidence, not financial data
+      }
+      return value;
+    };
     if(!same(baseline(current),baseline(incoming))) return null;
-    const conflicts=(a,b,identity)=>{const known=new Set(a.map(identity));return b.some(x=>known.has(identity(x)));};
-    for(const k of ['owners','portfolios','accounts','transactions','orders','plans','events','attachments']) {
-      if(conflicts(current[k],incoming[k],x=>x.id)) return null;
+    const shared=new Set(['owners','portfolios','institutions']);
+    const withIds=['owners','portfolios','institutions','accounts','transactions',
+      'orders','plans','events','attachments'];
+    for(const key of [...withIds,'history']) {
+      const existing=new Map(current[key].filter(item=>typeof item?.id==='string').map(item=>[item.id,item]));
+      for(const item of incoming[key]) {
+        if(withIds.includes(key) && typeof item?.id!=='string') return null;
+        if(typeof item?.id!=='string') continue; // Legacy history entries can be unkeyed.
+        const previous=existing.get(item.id);
+        if(previous && (!shared.has(key) || !same(previous,item))) return null;
+      }
     }
-    // A split is global to the instrument and would be replayed into unrelated incoming accounts.
+    // A split transaction is globally replayed into another account by the
+    // underlying engine. Do not bypass this rule; audited opening snapshots
+    // can represent earlier splits in the non-replayed history instead.
     if([...current.transactions,...incoming.transactions].some(t=>t.type==='SPLIT')) return null;
     const combined=structuredClone(current);
-    for(const k of entities) {
-      if(k==='institutions') {
-        for(const entity of incoming[k]) {
-          const former=current[k].find(x=>x.id===entity.id);
-          if(former && !same(former,entity)) return null;
-          if(!former) combined[k].push(entity);
+    for(const key of entities) {
+      if(shared.has(key)) {
+        const known=new Set(combined[key].map(x=>x.id));
+        for(const item of incoming[key]) if(!known.has(item.id)) {
+          combined[key].push(structuredClone(item));
+          known.add(item.id);
         }
-      } else combined[k].push(...incoming[k]);
+      } else combined[key].push(...structuredClone(incoming[key]));
     }
-    try {F.calculate(combined);return combined;} catch {return null;}
+    try {delete combined.settings.monthlyBackup;F.calculate(combined);return combined;} catch {return null;}
   }
-  return {start,open,encrypt,decrypt,inspect,legacyData,removeLegacy,same,merge,scope,RESET_NOTICE,FORMAT,MAX};
+
+  // Mandatory monthly backups are kept private, entirely inside the browser.
+  // An archive is only marked verified after the user re-selects the downloaded ZIP.
+  const monthKey=(now=new Date())=>String(now.getFullYear()).padStart(4,'0')+'-'+String(now.getMonth()+1).padStart(2,'0');
+  const backupDue=(data,now=new Date())=>Boolean(data?.accounts?.length && data?.settings?.monthlyBackup?.month!==monthKey(now));
+  const slug=value=>String(value||'compte').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^A-Za-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,45)||'compte';
+
+  // Individual files are *current-position snapshots*, not a second replay of past trades.
+  // Complete backup, included in the same ZIP, retains the full live journal and analytics.
+  function accountSnapshot(data,accountId) {
+    const totals=F.calculate(data);
+    const current=totals.accounts.find(a=>a.id===accountId);
+    const original=data.accounts.find(a=>a.id===accountId);
+    if(!original || !current) throw Error('Compte introuvable pour la sauvegarde.');
+    const portfolio=data.portfolios.find(p=>p.id===original.portfolioId);
+    const owner=data.owners.find(o=>o.id===portfolio.ownerId);
+    const institution=data.institutions.find(s=>s.id===original.institutionId);
+    const snapshot=F.empty();
+    snapshot.asOf=F.today();
+    snapshot.source='Sauvegarde locale des comptes';
+    snapshot.settings=structuredClone(data.settings);
+    delete snapshot.settings.monthlyBackup; // the receiving device must make its own monthly backup
+    snapshot.owners=[structuredClone(owner)];
+    snapshot.portfolios=[structuredClone(portfolio)];
+    snapshot.institutions=[structuredClone(institution)];
+    snapshot.accounts=[{...structuredClone(original),cash:current.cash,reserved:current.reserved}];
+    snapshot.positions=Object.values(current.positions).filter(p=>p.qty>0).map(p=>({
+      accountId,symbol:p.symbol,qty:p.qty,cost:p.cost
+    }));
+    snapshot.quotes=structuredClone(data.quotes);
+    snapshot.instruments=structuredClone(data.instruments);
+    if(data.fxRates) snapshot.fxRates=structuredClone(data.fxRates);
+    // Keep original account records for audit, but never replay already-included cash/holdings.
+    snapshot.history=data.history.filter(h=>h.accountId===accountId).map(h=>structuredClone(h));
+    for(const t of data.transactions.filter(t=>t.accountId===accountId||t.toAccountId===accountId)) {
+      // Do not leak the ID, notes or identity of a counterparty's account.
+      const entry={id:'archive-tx-'+t.id,kind:'ARCHIVE_TRANSACTION',accountId,
+        type:t.type,date:t.date,brokerRef:t.brokerRef};
+      for(const field of ['symbol','qty','price','amount','gross','tax','broker',
+        'fees','other','actualTotal','ratioFrom','ratioTo','dividendBasis','source','attachmentId'])
+        if(t[field]!==undefined) entry[field]=structuredClone(t[field]);
+      if(t.type==='TRANSFER') entry.direction=t.accountId===accountId?'SORTIE':'ENTRÉE';
+      snapshot.history.push(entry);
+    }
+    for(const o of data.orders.filter(o=>o.accountId===accountId))
+      snapshot.history.push({...structuredClone(o),id:'archive-order-'+o.id,kind:'ARCHIVE_ORDER'});
+    for(const e of data.events.filter(e=>e.accountId===accountId))
+      snapshot.history.push({...structuredClone(e),id:'archive-event-'+e.id,kind:'ARCHIVE_EVENT'});
+    const refs=new Set(snapshot.history.map(h=>h.attachmentId).filter(Boolean));
+    snapshot.attachments=data.attachments.filter(a=>refs.has(a.id)).map(a=>structuredClone(a));
+    F.calculate(snapshot);
+    return snapshot;
+  }
+
+  function crc32(bytes) {
+    let crc=-1;
+    for(const byte of bytes) {
+      crc^=byte;
+      for(let i=0;i<8;i++) crc=(crc>>>1)^((crc&1)?0xEDB88320:0);
+    }
+    return (crc^(-1))>>>0;
+  }
+  function zipFiles(files) {
+    if(!Array.isArray(files)||!files.length||files.length>100) throw Error('Nombre de fichiers de sauvegarde invalide.');
+    const encoder=new TextEncoder(), local=[], central=[];
+    let offset=0,total=0;
+    const w=(view,offset,value,size)=>size===2?view.setUint16(offset,value,true):view.setUint32(offset,value,true);
+    for(const file of files) {
+      if(!/^[A-Za-z0-9_./-]+\.json$/.test(file.name)||file.name.includes('..'))
+        throw Error('Nom de fichier ZIP invalide.');
+      const filename=encoder.encode(file.name), body=encoder.encode(file.data);
+      if(body.length>MAX) throw Error('JSON individuel trop volumineux.');
+      total+=body.length;
+      if(total>128*1024*1024) throw Error('Archive mensuelle supérieure à 128 Mio.');
+      const crc=crc32(body);
+      const localHeader=new Uint8Array(30+filename.length);
+      const v=new DataView(localHeader.buffer);
+      w(v,0,0x04034b50,4);w(v,4,20,2);w(v,6,0x800,2);
+      w(v,14,crc,4);w(v,18,body.length,4);w(v,22,body.length,4);
+      w(v,26,filename.length,2);localHeader.set(filename,30);
+      local.push(localHeader,body);
+      const entry=new Uint8Array(46+filename.length);
+      const c=new DataView(entry.buffer);
+      w(c,0,0x02014b50,4);w(c,4,20,2);w(c,6,20,2);w(c,8,0x800,2);
+      w(c,16,crc,4);w(c,20,body.length,4);w(c,24,body.length,4);
+      w(c,28,filename.length,2);w(c,42,offset,4);entry.set(filename,46);
+      central.push(entry);
+      offset+=localHeader.length+body.length;
+    }
+    const centralLength=central.reduce((a,b)=>a+b.length,0);
+    const end=new Uint8Array(22), e=new DataView(end.buffer);
+    w(e,0,0x06054b50,4);w(e,8,files.length,2);w(e,10,files.length,2);
+    w(e,12,centralLength,4);w(e,16,offset,4);
+    const output=new Uint8Array(offset+centralLength+22);
+    let cursor=0;
+    for(const piece of [...local,...central,end]) {output.set(piece,cursor);cursor+=piece.length;}
+    return output;
+  }
+  function readZip(bytes) {
+    if(!(bytes instanceof Uint8Array) || bytes.length>128*1024*1024)
+      throw Error('Archive ZIP invalide ou supérieure à 128 Mio.');
+    const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),decoder=new TextDecoder('utf-8',{fatal:true});
+    const files=new Map();
+    let offset=0,total=0;
+    while(offset+30<=bytes.length && view.getUint32(offset,true)===0x04034b50) {
+      const flags=view.getUint16(offset+6,true), method=view.getUint16(offset+8,true);
+      const expected=view.getUint32(offset+14,true),size=view.getUint32(offset+18,true);
+      const compressed=view.getUint32(offset+22,true),nameLength=view.getUint16(offset+26,true);
+      const extra=view.getUint16(offset+28,true);
+      if(method!==0 || (flags&8) || compressed!==size || size>MAX || files.size>=100)
+        throw Error('ZIP non pris en charge ou incomplet.');
+      const start=offset+30+nameLength+extra,end=start+size;
+      if(start>bytes.length || end>bytes.length) throw Error('Fichier ZIP tronqué.');
+      const name=decoder.decode(bytes.subarray(offset+30,offset+30+nameLength));
+      if(!/^[A-Za-z0-9_./-]+\.json$/.test(name)||name.includes('..')||files.has(name))
+        throw Error('Nom ou doublon de fichier dans le ZIP.');
+      const content=bytes.subarray(start,end);
+      if(crc32(content)!==expected) throw Error('Intégrité ZIP incorrecte (CRC32).');
+      total+=size;
+      if(total>128*1024*1024) throw Error('Contenu ZIP trop volumineux.');
+      files.set(name,decoder.decode(content));
+      offset=end;
+    }
+    if(files.size===0 || offset+4>bytes.length || view.getUint32(offset,true)!==0x02014b50)
+      throw Error('Répertoire ZIP absent ou invalide.');
+    return files;
+  }
+  function monthlyBundle(data,now=new Date()) {
+    F.calculate(data);
+    if(!data.accounts.length) throw Error('Aucun compte à sauvegarder.');
+    const month=monthKey(now);
+    const files=[{name:'BRVM_COMPLET.json',data:JSON.stringify(data,null,2)}];
+    const used=new Set(['BRVM_COMPLET.json']);
+    for(const [i,a] of data.accounts.entries()) {
+      const p=data.portfolios.find(x=>x.id===a.portfolioId);
+      const owner=data.owners.find(x=>x.id===p.ownerId);
+      const sgi=data.institutions.find(x=>x.id===a.institutionId);
+      let name='comptes/'+slug(owner.label)+'_'+slug(sgi.label)+'.json';
+      if(used.has(name)) name='comptes/'+slug(owner.label)+'_'+slug(sgi.label)+'_'+(i+1)+'.json';
+      used.add(name);
+      files.push({name,data:JSON.stringify(accountSnapshot(data,a.id),null,2)});
+    }
+    files.push({name:'MANIFESTE.json',data:JSON.stringify({
+      format:'brvm-monthly-bundle-v1',month,generatedAt:now.toISOString(),
+      accountCount:data.accounts.length,files:files.map(f=>f.name),
+      note:'Le JSON complet restaure le journal actif; les JSON individuels sont des instantanes avec historique archive.'
+    },null,2)});
+    return {month,files,bytes:zipFiles(files)};
+  }
+  async function sha256(bytes) {
+    const digest=await crypto.subtle.digest('SHA-256',bytes);
+    return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+  }
+
+  return {start,open,encrypt,decrypt,inspect,legacyData,removeLegacy,same,merge,scope,RESET_NOTICE,FORMAT,MAX,
+    monthKey,backupDue,accountSnapshot,zipFiles,readZip,monthlyBundle,sha256};
 });

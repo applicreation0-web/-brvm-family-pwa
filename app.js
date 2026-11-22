@@ -12,14 +12,14 @@
   const col=['#74e0ac','#79adff','#c3afff','#ffc37a','#64dae7','#ff9aad','#e6df7d'];
   const labels={DEPOSIT:'Versement reçu',WITHDRAW:'Retrait',BUY:'Achat',SELL:'Vente',FEE:'Frais de compte',
     DIVIDEND:'Dividende encaissé',SPLIT:'Fractionnement / regroupement',BONUS:'Actions gratuites',RIGHTS:'Droits',
-    STOCK_DIVIDEND:'Dividende en actions',TRANSFER:'Transfert',CORRECTION:'Rectification'};
+    STOCK_DIVIDEND:'Dividende en actions',RIGHTS_EXPIRY:'Expiration de droits',TRANSFER:'Transfert',CORRECTION:'Rectification'};
   const basis={manual:'Saisi localement',official:'Officiel (source déclarée)',provisional:'Provisoire',theoretical:'Théorique après split',execution:'Prix d’exécution'};
   const pages={dashboard:['Vue d’ensemble','▦'],accounts:['Comptes et positions','▤'],invest:['Investissement','◎'],orders:['Ordres','⇄'],
     events:['Dividendes et FCP','◈'],history:['Historique et analyses','◷'],settings:['Cibles et risques','⚙'],data:['Données et sauvegarde','⬡']};
   let store, record, db, calc, tab='dashboard', portfolioId='', busy=false, refreshing=false, plan=null, comparison=null, planInputs=null, importPreview=null;
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
-  let importRevision, mergedImport, importReadTicket=0;
+  let importRevision, mergedImport, importReadTicket=0, pendingBackup=null;
   let quoteOptions=null, checkpoint=null, restoreFocus=null, projectInputs={monthly:null,fee:.016,dividend:.03}, historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
   const findAccount=id=>db.accounts.find(x=>x.id===id);
@@ -70,7 +70,8 @@
     if(target) {target.hidden=false; target.textContent=err.message; target.scrollIntoView({block:'nearest'});}
     else notify(err.message,true);
   }
-  async function put(next,replace=false) {
+  async function put(next,replace=false,backupApproval=false) {
+    if(!backupApproval && V.backupDue(db)) throw Error('Sauvegarde mensuelle obligatoire : téléchargez et vérifiez le ZIP avant toute modification.');
     record=await store.commit(next,record.revision,replace);
     db=record.data;
     calc=F.calculate(db);
@@ -81,6 +82,34 @@
     const a=document.createElement('a');
     a.href=url; a.download=name; a.click();
     setTimeout(()=>URL.revokeObjectURL(url),3000);
+  }
+  async function exportMonthlyBackup() {
+    if(!db?.accounts.length) throw Error('Ajoutez ou importez d’abord un compte.');
+    const bundle=V.monthlyBundle(db);
+    const fingerprint=await V.sha256(bundle.bytes);
+    pendingBackup={fingerprint,month:bundle.month,revision:record.revision,bytes:bundle.bytes.length};
+    download(bundle.bytes,'BRVM_SAUVEGARDE_'+bundle.month+'.zip','application/zip');
+    modal('Sauvegarde mensuelle à vérifier',
+      '<p>Le ZIP contient le JSON complet et un JSON par compte actif. Conservez ce fichier hors du téléphone, dans un espace privé. Les JSON sont en clair.</p>'+
+      '<p><strong>Étape obligatoire :</strong> sélectionnez ci-dessous le ZIP que vous venez d’enregistrer. Le contenu et son empreinte seront contrôlés avant de débloquer les modifications.</p>'+
+      '<label class="field"><span>Vérifier le ZIP sauvegardé</span><input id="backup-verify" type="file" accept=".zip,application/zip"></label>'+
+      '<p class="quiet">La consultation et la récupération de données restent possibles même sans sauvegarde. L’application ne peut pas vérifier un stockage externe sans ce contrôle.</p>');
+  }
+  async function verifyMonthlyBackup(file) {
+    const proof=pendingBackup;
+    if(!proof || !file) throw Error('Relancez d’abord la sauvegarde mensuelle.');
+    if(file.size!==proof.bytes || file.size>128*1024*1024)
+      throw Error('La taille de la sauvegarde ne correspond pas.');
+    const digest=await V.sha256(await file.arrayBuffer());
+    if(digest!==proof.fingerprint) throw Error('Le fichier n’est pas identique au ZIP exporté.');
+    if(record.revision!==proof.revision || V.monthKey()!==proof.month)
+      throw Error('Les données ou le mois ont changé. Relancez la sauvegarde.');
+    const next=structuredClone(db);
+    next.settings.monthlyBackup={month:proof.month,verifiedAt:new Date().toISOString(),sha256:digest};
+    await put(next,true,true);
+    pendingBackup=null;
+    close();render();
+    notify('Sauvegarde du mois vérifiée. Les modifications sont à nouveau autorisées.');
   }
   function portfolioPicker() {
     return `<label class="picker"><span>Portefeuille</span>${select('portfolio',calc.portfolios.map(p=>[p.id,p.label+(p.archived?' · archivé':'')]),portfolioId,'id="portfolio"')}</label>`;
@@ -233,7 +262,7 @@
       ${field('accountId','Compte',select('accountId',accountsOptions(list),a,forced?'data-locked="yes"':''))}
       ${field('date','Date effective',input('date',F.today(),'date','required max="'+F.today()+'"'))}
       ${field('brokerRef','Référence du justificatif',input('brokerRef','','text','required minlength="4" maxlength="180"'))}</div>
-      <div class="fields" data-types="BUY SELL DIVIDEND SPLIT BONUS RIGHTS STOCK_DIVIDEND">${field('symbol','Symbole',symInput(preset.symbol||''))}</div>
+      <div class="fields" data-types="BUY SELL DIVIDEND SPLIT BONUS RIGHTS STOCK_DIVIDEND RIGHTS_EXPIRY">${field('symbol','Symbole',symInput(preset.symbol||''))}</div>
       <div class="fields" data-types="DEPOSIT WITHDRAW FEE TRANSFER">${field('amount','Montant confirmé dans la devise du compte',money('amount'))}</div>
       <div class="fields" data-types="TRANSFER">${field('toAccountId','Compte destinataire',select('toAccountId',accountsOptions(list),'','required'))}</div>
       <div class="fields" data-fx-transfer hidden>
@@ -242,12 +271,17 @@
         ${field('exchangeDate','Date du change',input('exchangeDate',F.today(),'date','required'))}
         ${field('exchangeSource','Référence du bordereau de change',input('exchangeSource','','text','required maxlength="200"'))}
       </div>
-      <div class="fields" data-types="BUY SELL BONUS RIGHTS STOCK_DIVIDEND">${field('qty','Quantité réelle',input('qty','','number','required step="any" min="0.000001"'))}</div>
+      <div class="fields" data-types="BUY SELL BONUS RIGHTS STOCK_DIVIDEND RIGHTS_EXPIRY">${field('qty','Quantité réelle',input('qty','','number','required step="any" min="0.000001"'))}</div>
       <div class="fields" data-types="BUY SELL">${field('price','Prix unitaire réel (FCFA)',money('price'))}${field('broker','Courtage réel (FCFA)',money('broker',0))}
       ${field('actualTotal','Total débité / crédité sur avis (FCFA)',money('actualTotal'))}</div>
       <div class="fields" data-types="BUY SELL DIVIDEND">${field('other','Autres frais (FCFA)',money('other',0))}${field('tax','Impôts / retenue (FCFA)',money('tax',0))}</div>
       <div class="fields" data-types="DIVIDEND">${field('gross','Brut reçu (FCFA)',money('gross',preset.gross??''))}
-      <label class="check"><input name="cashDistribution" type="checkbox"> FCP · distribution effectivement créditée hors VL</label></div>
+      <label class="check"><input name="cashDistribution" type="checkbox"> FCP · distribution effectivement créditée hors VL</label>
+      <p class="quiet">Contrôle par action facultatif : renseignez les trois champs pour vérifier la quantité éligible avant/après fractionnement.</p>
+      ${field('dividendRecordDate','Date d’éligibilité du dividende',input('dividendRecordDate','','date'))}
+      ${field('dividendEligibleQty','Nombre de titres éligibles',input('dividendEligibleQty','','number','step="1" min="1"'))}
+      ${field('dividendGrossPerShare','Dividende brut par action (FCFA)',input('dividendGrossPerShare','','number','step="0.01" min="0.01"'))}
+      ${field('dividendStatementRef','Avis de situation initiale (si date antérieure à la photographie)',input('dividendStatementRef','','text','maxlength="180"'))}</div>
       <div class="fields" data-types="SPLIT">${field('ratioFrom','Ancien nombre',integer('ratioFrom',1))}${field('ratioTo','Nouveau nombre',integer('ratioTo',10))}</div>
       <div class="fields" data-types="BONUS RIGHTS STOCK_DIVIDEND">
         ${field('recordDate','Date d’éligibilité avant attribution',input('recordDate','','date','required'))}
@@ -257,7 +291,7 @@
         ${field('statementQty','Quantité éligible sur avis avant ouverture',integer('statementQty','',false))}
         ${field('statementRef','Référence de l’avis avant ouverture',input('statementRef','','text','maxlength="200"'))}
       </div>
-      <div class="fields" data-types="SPLIT BONUS RIGHTS STOCK_DIVIDEND">${field('source','Source de l’événement',input('source','','text','required maxlength="200"'))}</div>
+      <div class="fields" data-types="SPLIT BONUS RIGHTS STOCK_DIVIDEND RIGHTS_EXPIRY">${field('source','Source de l’événement',input('source','','text','required maxlength="200"'))}</div>
       <div data-types="BUY" class="fields">${field('override','Motif de dérogation si titre exclu',input('override','','text','maxlength="200"'))}</div>
       ${preset.corrects?'<p>Le moteur recalcule les écritures suivantes. Une rectification incompatible est refusée sans modifier le journal.</p>':''}
       ${preset.reinvests?'<p>Achat confirmé financé par le dividende net associé, dans la limite du solde disponible.</p>':''}
@@ -367,7 +401,7 @@
       esc(t.brokerRef)+(t.note?'<br><small>'+esc(t.note)+'</small>':''),
       `<div class="actions">${btn('tx-detail','Détail',t.id)}${t.attachmentId?btn('attachment','Télécharger la pièce',t.attachmentId):''}
       ${t.type==='DIVIDEND'&&!db.transactions.some(x=>x.corrects===t.id)?btn('reinvest','Réinvestir sur avis',t.id):''}
-      ${['DEPOSIT','WITHDRAW','FEE','TRANSFER','BUY','SELL','DIVIDEND','BONUS','RIGHTS','STOCK_DIVIDEND'].includes(t.type)&&!db.transactions.some(x=>x.corrects===t.id)?btn('correct','Rectifier',t.id):''}</div>`];
+      ${['DEPOSIT','WITHDRAW','FEE','TRANSFER','BUY','SELL','DIVIDEND','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY'].includes(t.type)&&!db.transactions.some(x=>x.corrects===t.id)?btn('correct','Rectifier',t.id):''}</div>`];
   }
   function historyView() {
     const p=getPortfolio();
@@ -396,8 +430,8 @@
     `;
   }
   function dataView() {
-    return `<div class="split">${pane('Sauvegardes privées',`<p>Exportez une sauvegarde chiffrée pour la conserver ou la restaurer sur un autre appareil. Le navigateur ne synchronise pas les portefeuilles. ${store.protected?'Le coffre actif est chiffré sur cet appareil. Verrouillez-le avant de quitter le profil.':'Les données actives sont stockées en clair. Vous pouvez activer le coffre local.'}</p>
-      <div class="actions">${store.protected?btn('lock','Verrouiller le coffre'):btn('protect','Chiffrer les données actives')}${btn('encrypt','Exporter chiffré','','primary')}${btn('import','Importer mes données')}${btn('import','Restaurer une sauvegarde')}${btn('export-json','Exporter mon JSON')}${btn('reset','Effacer mes données locales')}${checkpoint?btn('rollback','Restaurer le point précédent'):''}</div>
+    return `<div class="split">${pane('Sauvegardes privées',`<p>Sauvegarde mensuelle obligatoire : un ZIP contenant le JSON complet et un fichier indépendant pour chaque compte. Le mois est validé après relecture du fichier exporté.</p><p>Exportez une sauvegarde chiffrée pour la conserver ou la restaurer sur un autre appareil. Le navigateur ne synchronise pas les portefeuilles. ${store.protected?'Le coffre actif est chiffré sur cet appareil. Verrouillez-le avant de quitter le profil.':'Les données actives sont stockées en clair. Vous pouvez activer le coffre local.'}</p>
+      <div class="actions">${btn('monthly-backup','Sauvegarde mensuelle JSON · '+(V.backupDue(db)?'À effectuer':'Vérifiée'),'','primary')}${store.protected?btn('lock','Verrouiller le coffre'):btn('protect','Chiffrer les données actives')}${btn('encrypt','Exporter chiffré','','primary')}${btn('import','Importer mes données')}${btn('import','Restaurer une sauvegarde')}${btn('export-json','Exporter mon JSON')}${btn('reset','Effacer mes données locales')}${checkpoint?btn('rollback','Restaurer le point précédent'):''}</div>
       <p class="quiet">Une importation de remplacement garde le jeu précédent dans un point de restauration local. Sauvegardez avant de désinstaller, de changer d’adresse ou d’effacer les données du navigateur.</p>
       <details><summary>Données d’une ancienne version</summary><p>BRVM V2 et certaines versions V3 utilisaient un stockage commun à cette adresse. Vérifiez le contenu avant de le reprendre.</p>${btn('legacy','Voir les données de l’ancienne version')}</details>`)}
       ${pane('Sources de marché',`<p>L’actualisation automatique exige un flux autorisé pour cette installation. Le téléchargement manuel du fournisseur et l’import local restent disponibles.</p>
@@ -429,7 +463,8 @@
     $('#page-title').textContent=pages[tab][0];
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
     $('#quote-date').textContent=last?'Dernière cote · '+showDate(last):'Aucun cours chargé';
-    $('#view').innerHTML={dashboard,accounts:accountsView,invest:investment,orders:ordersView,events:eventsView,
+    $('#view').innerHTML=(V.backupDue(db)?'<section class="pane" role="alert"><h2>Sauvegarde JSON mensuelle obligatoire</h2><p>La consultation reste disponible, mais les nouvelles opérations sont suspendues jusqu’à la vérification de la sauvegarde du mois.</p>'+btn('monthly-backup','Télécharger et vérifier le ZIP','','primary')+'</section>':'')+
+      {dashboard,accounts:accountsView,invest:investment,orders:ordersView,events:eventsView,
       history:historyView,settings:settingsView,data:dataView}[tab]();
   }
   function goTo(page) {
@@ -457,6 +492,10 @@
   const phraseFields=()=>field('pass','Phrase secrète (12 caractères ou plus)',input('pass','','password','required minlength="12" maxlength="1024" autocomplete="new-password"'))+
     field('again','Répéter la phrase',input('again','','password','required minlength="12" maxlength="1024" autocomplete="new-password"'));
   function preview(d) {
+    // Backup verification is local to each device. Restoring an old JSON never
+    // certifies that a new independent copy exists on this device.
+    d=structuredClone(d);
+    if(d.settings) delete d.settings.monthlyBackup;
     importPreview=d;
     importRevision=record.revision;
     const fact=F.calculate(d), identical=V.same(d,db);
@@ -468,17 +507,28 @@
       <p>${identical?'Ce fichier est identique aux données locales. Aucune écriture ne sera ajoutée.':
         hasLocal?'Le remplacement conserve le jeu précédent. Une fusion est proposée uniquement lorsque les données peuvent être réunies sans doublon ni rejeu.':'Les données seront enregistrées après votre confirmation.'}</p>
       ${form('restore',
-        (mergedImport?field('mode','Action',select('mode',[['replace','Remplacer les données locales'],['merge','Fusionner les jeux compatibles']],'replace','required')):'')+
+        (mergedImport?field('mode','Action',select('mode',[['merge','Fusionner les comptes compatibles'],['replace','Remplacer les données locales']],'merge','required')):'')+
+        (hasLocal&&!identical?'<label class="check"><input name="acceptReplace" type="checkbox"> Je comprends qu’un remplacement supprime tous les comptes absents du fichier importé.</label>':'')+
         (store.protected?'':'<p>Configurez le coffre pour enregistrer cet import sur cet appareil.</p>'+phraseFields()),
         identical?'Confirmer sans doublon':hasLocal?'Appliquer le choix':'Importer et enregistrer')}`);
   }
   async function chooseImport(file) {
     const ticket=++importReadTicket;
     $('#flash').hidden=true;
-    if(file.size>V.MAX) throw Error('Sauvegarde trop volumineuse.');
+    const isZip=/\.zip$/i.test(file.name);
+    if(file.size>(isZip?128*1024*1024:V.MAX)) throw Error('Sauvegarde trop volumineuse.');
     let raw;
-    try {raw=JSON.parse(await file.text());}
-    catch {throw Error('Fichier JSON illisible. Les données locales sont conservées.');}
+    if(isZip) {
+      const archive=V.readZip(new Uint8Array(await file.arrayBuffer()));
+      const manifest=JSON.parse(archive.get('MANIFESTE.json')||'null');
+      if(manifest?.format!=='brvm-monthly-bundle-v1'||!archive.has('BRVM_COMPLET.json'))
+        throw Error('Le ZIP ne correspond pas à une sauvegarde BRVM mensuelle.');
+      try {raw=JSON.parse(archive.get('BRVM_COMPLET.json'));}
+      catch {throw Error('JSON complet corrompu dans le ZIP.');}
+    } else {
+      try {raw=JSON.parse(await file.text());}
+      catch {throw Error('Fichier JSON illisible. Les données locales sont conservées.');}
+    }
     if(ticket!==importReadTicket) return;
     if(raw?.schema===V.FORMAT) {
       importPreview=raw;
@@ -537,6 +587,7 @@
         case 'close': close(); break;
         case 'refresh': void refresh(); break;
         case 'import': $('#import').click();break;
+        case 'monthly-backup': await exportMonthlyBackup();break;
         case 'legacy':
           modal('Reprendre les données de l’ancienne version',form('legacy',
             '<p>Les anciennes versions partageaient leur stockage sur cette origine. Vérifiez que l’aperçu correspond à vos données avant de confirmer.</p>','Afficher l’aperçu'));
@@ -747,6 +798,13 @@
           row.type ||= form.dataset.type;
           row.accountId ||= form.dataset.account;
           row.cashDistribution=f.has('cashDistribution');
+          if(row.type==='DIVIDEND'&&['dividendRecordDate','dividendEligibleQty',
+            'dividendGrossPerShare','dividendStatementRef'].some(k=>trim(f,k))) {
+            row.dividendBasis={recordDate:trim(f,'dividendRecordDate'),
+              eligibleQty:number(f,'dividendEligibleQty'),grossPerShare:number(f,'dividendGrossPerShare'),
+              statementRef:trim(f,'dividendStatementRef')};
+          }
+          for(const k of ['dividendRecordDate','dividendEligibleQty','dividendGrossPerShare','dividendStatementRef']) delete row[k];
           if(row.type==='CORRECTION') row.replay=true;
           if(row.type==='TRANSFER'&&f.has('exchangeRate')) {
             row.toAmount=number(f,'toAmount');
@@ -848,8 +906,13 @@
         case 'legacy': await recoverLegacy();return;
         case 'legacy-unlock': await recoverLegacy(f.get('pass'));return;
         case 'restore': {
-          const data=f.get('mode')==='merge'?mergedImport:importPreview;
+          const mergeMode=f.get('mode')==='merge';
+          const data=mergeMode?mergedImport:importPreview;
           if(!data||record.revision!==importRevision) throw Error('Les données ont changé. Ouvrez de nouveau le fichier.');
+          const currentHasData=db.accounts.length||db.owners.length||db.portfolios.length||
+            db.transactions.length||db.history.length;
+          if(!mergeMode&&currentHasData&&!V.same(db,importPreview)&&!f.has('acceptReplace'))
+            throw Error('Confirmez explicitement le remplacement pour éviter la perte d’autres comptes.');
           if(!store.protected) {
             if(f.get('pass')!==f.get('again')) throw Error('Les deux phrases diffèrent.');
             record=await store.protect(f.get('pass'),importRevision,data,true);
@@ -893,6 +956,10 @@
     if(el.matches('#account-filter')) {accountFilter=el.value;render();$('#account-filter')?.focus();}
     if(el.matches('#history-month')) {historyMonth=el.value;journalLimit=40;render();$('#history-month')?.focus();}
     if(el.closest('form[data-form=tx]') && ['type','accountId','toAccountId'].includes(el.name)) transactionFields(el.form);
+    if(el.id==='backup-verify') {
+      const file=el.files?.[0];el.value='';
+      if(file) void verifyMonthlyBackup(file).catch(showError);
+    }
     if(el.id==='import'||el.id==='quote-import') {
       const file=el.files?.[0];el.value='';
       if(file) void (el.id==='import'?chooseImport(file):chooseQuotes(file)).catch(showError);
@@ -959,7 +1026,7 @@
     });
   }
   function scheduleRefresh() {
-    if(db?.settings.autoQuotes && !document.hidden && navigator.onLine && !busy && !$('#modal').open &&
+    if(db?.settings.autoQuotes && !V.backupDue(db) && !document.hidden && navigator.onLine && !busy && !$('#modal').open &&
       Date.now()-lastQuoteAttempt>=15*60*1000) void refresh(true);
   }
   document.addEventListener('visibilitychange',scheduleRefresh);

@@ -18,7 +18,7 @@ ALLOWED = re.compile(
     r'(?:app|sw|finance|engine|analysis|quotes|vault)\.js|'
     r'icons/icon-(?:192|512)\.png|market/feed\.json|'
     r'scripts/(?:build|privacy_check|prepare_feed)\.py|'
-    r'tests/(?:[a-z_0-9]+\.test\.js|[a-z_0-9]+\.py))'
+    r'tests/(?:[a-z_0-9]+\.test\.js|[a-z_0-9]+\.py|account-merge\.test\.js))'
 )
 SENSITIVE = re.compile(
     r'(?:-----BEGIN (?:[A-Z]+ )?PRIVATE KEY-----|gh[pso]_[a-z0-9]{30,}|'
