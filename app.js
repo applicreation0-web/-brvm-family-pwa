@@ -569,7 +569,7 @@
       `<button type="button" data-page="${key}" ${key===tab?'aria-current="page"':''}><span aria-hidden="true">${icon}</span>${label}</button>`).join('');
     $('#page-title').textContent=pages[tab][0];
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
-    $('#quote-date').textContent=last?'Dernière cote · '+showDate(last):'Aucun cours chargé';
+    $('#quote-date').textContent=last?'Cours enregistrés · '+showDate(last):'Aucun cours chargé';
     $('#view').innerHTML=(V.backupDue(db)?'<section class="backup-banner" role="status"><span><strong>Sauvegarde du mois requise.</strong> Les modifications restent verrouillées.</span>'+btn('monthly-backup','Sauvegarder et vérifier','','primary')+'</section>':'')+
       {dashboard,accounts:accountsView,invest:investment,orders:ordersView,events:eventsView,
       history:historyView,settings:settingsView,data:dataView}[tab]();
@@ -579,6 +579,21 @@
     tab=page; $('#flash').hidden=true;
     document.body.classList.remove('menu-open'); $('#menu').setAttribute('aria-expanded','false');
     render(); $('#view').focus({preventScroll:true}); window.scrollTo(0,0);
+  }
+  function marketUpdateHelp() {
+    const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
+    modal('Mettre à jour les cours BRVM',`
+      <p class="market-update-intro">Dernière séance enregistrée : <strong>${showDate(last)}</strong>.
+      Cette installation n'a actuellement aucun flux automatique autorisé :
+      appuyer sur « Actualiser » ne peut donc pas inventer une nouvelle clôture.</p>
+      <div class="market-update-options">
+        ${btn('quote-import','1. Importer un fichier de cours CSV / JSON','','primary')}
+        <a href="https://brvmdata.com/telechargements/actions-derniere-seance.csv" target="_blank" rel="noopener noreferrer">2. Télécharger les cours de dernière séance (BRVMData)</a>
+        <a href="https://www.brvm.org/fr/marche/bulletin-officiel-de-la-cote" target="_blank" rel="noopener noreferrer">3. Vérifier le Bulletin officiel BRVM</a>
+      </div>
+      <p class="quiet">Importez le CSV téléchargé, puis indiquez sa provenance. L'app conserve la date de séance,
+      la source et la qualité de chaque cotation et refuse les fichiers invalides ou les séances contradictoires.
+      Les titres, les quantités et les espèces ne changent pas lors d'une actualisation des cours.</p>`);
   }
   async function refresh(silent=false) {
     if(refreshing) return;
@@ -692,7 +707,7 @@
     try {
       switch(action) {
         case 'close': close(); break;
-        case 'refresh': void refresh(); break;
+        case 'refresh': if(await Q.feedEnabled()) void refresh(); else marketUpdateHelp(); break;
         case 'import': $('#import').click();break;
         case 'monthly-backup': await exportMonthlyBackup();break;
         case 'legacy':
