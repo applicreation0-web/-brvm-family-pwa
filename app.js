@@ -196,7 +196,7 @@
        <div class="allocation-grid"><div class="allocation-pie-wrap"><div class="allocation-pie" role="img" aria-label="Répartition ${esc(title)} des actifs cotés et espèces, repérée par couleurs et légende" style="background:conic-gradient(${stops})"><div class="allocation-hole"><small>Patrimoine connu</small><strong>${fc(total)}</strong></div></div></div>
        <div class="allocation-breakdown"><ul class="allocation-legend">${compact}</ul>${more}</div></div>${warning}
        <p class="quiet">Pourcentage principal = part du patrimoine connu. Sous chaque titre CORE : part des actions CORE / cible configurée. Les prix doivent être datés.</p>
-       <div class="actions">${go('invest','Rééquilibrer sur les cibles')}${go('accounts','Voir toutes les actions')}</div></article>`;
+       <div class="actions">${go('invest','Rééquilibrer sur les cibles')}${go('accounts','Voir les comptes')}${btn('new-account','Ajouter une SGI / un compte')}</div></article>`;
   }
   const validatedCore=()=>E.symbols.map(s=>s+' '+pct(E.targets[s])).join(' · ');
   function targetNotice(p) {
@@ -251,7 +251,7 @@
   }
   function accountsView() {
     const p=getPortfolio();
-    return `<div class="context compact">${p?portfolioPicker()+field('account','Filtrer les comptes',select('account',[['','Tous les comptes'],...accountsOptions(p.accounts)],accountFilter,'id="account-filter"')):''}<div class="actions">${btn('trade-buy','Acheter','','primary')}${btn('trade-sell','Vendre')}${btn('new-account','Ajouter un compte')}</div></div>
+    return `<div class="context compact">${p?portfolioPicker()+field('account','Filtrer les comptes',select('account',[['','Tous les comptes'],...accountsOptions(p.accounts)],accountFilter,'id="account-filter"')):''}<div class="actions">${btn('trade-buy','Acheter','','primary')}${btn('trade-sell','Vendre')}${btn('new-account','Ajouter une SGI / un compte')}</div></div>
       ${p?.accounts.filter(a=>!accountFilter||a.id===accountFilter).map(a=>pane(accName(a.id),
         `<div class="account-total"><strong>${amountIn(a.total,a.currency)}</strong><span>Cash ${amountIn(a.cash,a.currency)} · Disponible ${amountIn(a.available,a.currency)} · Réservé ${amountIn(a.reserved,a.currency)}</span>
         ${a.currency!=='XOF'?`<p class="quiet">${a.rate?`Contre-valeur indicative ${fc(a.totalXof)} · taux du ${showDate(a.rate.date)} · ${esc(a.rate.source)}${F.stale(a.rate,db.settings.staleDays)?' · taux ancien':''}`:'Taux absent · exclu du total XOF'}</p>`:''}
@@ -269,18 +269,18 @@
     const a=existing||{};
     const options=(list,include)=>list.filter(x=>!x.archived||x.id===include).map(x=>[x.id,x.label]);
     return form('account',
-      field('portfolioId','Portefeuille',select('portfolioId',options(db.portfolios,a.portfolioId),a.portfolioId||portfolioId,a.id?'disabled':''))+
+      field('portfolioId','1. À quel portefeuille rattacher ce compte ?',select('portfolioId',options(db.portfolios,a.portfolioId),a.portfolioId||portfolioId,a.id?'disabled':''))+
       (!a.id?field('newPortfolio','Nouveau portefeuille si nécessaire',input('newPortfolio')):'')+
-      field('institutionId','SGI',select('institutionId',[['','Choisir une SGI'],...options(db.institutions,a.institutionId)],a.institutionId,a.id?'disabled':''))+
-      (!a.id?field('newInstitution','Ou ajouter une nouvelle SGI',input('newInstitution')):'')+
-      field('label','Libellé du compte (facultatif)',input('label',a.label||'','text','maxlength="200"'))+
+      field('institutionId','2. SGI déjà enregistrée',select('institutionId',[['','Choisir une SGI'],...options(db.institutions,a.institutionId)],a.institutionId,a.id?'disabled':''))+
+      (!a.id?field('newInstitution','Ou saisir une nouvelle SGI (prioritaire si remplie)',input('newInstitution','','text','maxlength="200"')):'')+
+      field('label','3. Nom du compte (facultatif)',input('label',a.label||'','text','maxlength="200"'))+
       (!a.id?field('currency','Devise du compte',select('currency',F.currencies.map(c=>[c,c]),'XOF'))+
       field('openedOn','Date d’ouverture',input('openedOn',F.today(),'date','required max="'+F.today()+'"'))+
-      field('cash','Cash initial confirmé dans la devise du compte',money('cash',0)):'')+
+      field('cash','Espèces réellement détenues sur le relevé (0 si compte neuf)',money('cash',0)):'')+
       `<div class="fields">${field('broker','Courtage estimé (%)',input('broker',(a.brokerRate??.01)*100,'number','min="0" max="1" step="0.01" required'))}
       ${field('other','Autres frais estimés (%)',input('other',Math.round((a.otherRate??.006)*10000)/100,'number','min="0" max="10" step="0.01" required'))}</div>`+
       (a.id?`<label class="check"><input name="archived" type="checkbox" ${a.archived?'checked':''}> Archiver le compte</label>`:'')+
-      '<p class="quiet">Les comptes en devises suivent les liquidités. Les titres BRVM et les simulations restent sur les comptes XOF.</p>','Enregistrer le compte',a.id);
+      '<p class="quiet">Ce formulaire crée uniquement le suivi local. Ouvrez d’abord le compte auprès de la SGI. Aucun achat, dépôt, frais ou mensualité fictive n’est créé ; la photographie initiale doit correspondre au relevé.</p>','Enregistrer le compte',a.id);
   }
   function entityForm(group,id) {
     const names={owners:'personne',portfolios:'portefeuille',institutions:'SGI'};
@@ -718,7 +718,7 @@
           break;
         }
         case 'new-account':
-          if(store.protected || db.accounts.length) modal('Ajouter un compte',accountForm());
+          if(store.protected || db.accounts.length) modal('Ajouter une SGI / un compte',accountForm());
           else modal('Protéger votre premier compte',form('protect',phraseFields(),'Activer le coffre et créer un compte','account'));
           break;
         case 'entity': entityForm(...id.split('|')); break;
@@ -870,7 +870,10 @@
             }
             let i=next.institutions.find(x=>x.id===f.get('institutionId'));
             const sgi=trim(f,'newInstitution');
-            if(sgi) {i={id:F.id(),label:sgi};next.institutions.push(i);}
+            if(sgi) {
+              i=next.institutions.find(existing=>existing.label.trim().toLocaleLowerCase('fr')===sgi.toLocaleLowerCase('fr'));
+              if(!i) {i={id:F.id(),label:sgi};next.institutions.push(i);}
+            }
             if(!i) throw Error('Choisir ou nommer une SGI.');
             a={id:F.id(),portfolioId:p.id,institutionId:i.id,currency:f.get('currency'),cash:number(f,'cash'),reserved:0,openedOn:f.get('openedOn')};
             if(a.cash && next.observations.some(o=>o.portfolioId===p.id)) throw Error('Pour préserver les performances observées, créez le compte à zéro puis saisissez le montant crédité sur justificatif.');
