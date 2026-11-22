@@ -157,8 +157,11 @@ def check(first, second):
         shots=ROOT / 'test_artifacts'
         shots.mkdir(exist_ok=True)
         page.screenshot(path=str(shots / 'dashboard_fictif_android_390px.png'),full_page=True)
+        page.get_by_role('button', name='Menu').click()
+        expect(page.locator('.rail')).to_be_visible()
+        page.locator('#nav [data-page=settings]').click()
+        page.set_viewport_size({'width':1366,'height':900})
         # Les objectifs privés anciens ne changent pas silencieusement : restauration explicite et vérifiée.
-        page.locator('#nav [data-page=settings]').press('Enter')
         targets=page.locator('form[data-form=targets]')
         for sym,value in [('SNTS','25'),('ORAC','15'),('CIEC','10'),('TOCI','15'),
                           ('SMBC','10'),('NTLC','15'),('PALC','10')]:
