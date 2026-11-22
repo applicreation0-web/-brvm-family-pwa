@@ -1,4 +1,4 @@
-# BRVM Family V3 — GitHub Pages
+# BRVM Family V3.1 — GitHub Pages et APK Android
 
 PWA indépendante, hébergée directement sur GitHub Pages. Aucun hébergement Vercel ou constructeur d'applications n'est nécessaire.
 
@@ -7,6 +7,14 @@ Une fois la publication GitHub Pages activée et les tests réussis :
 `https://applicreation0-web.github.io/-brvm-family-pwa/`
 
 Sur Android, ouvrir l'adresse dans Chrome puis installer l'application depuis le menu du navigateur.
+
+## Ergonomie 3.1 — cinq gestes essentiels
+- **Accueil** : actions directes Acheter, Vendre, Dividende, Opérations sur titres, Sauvegarder. Camembert des actions et espèces, valeur en FCFA, pourcentages; tableau de bord CORE réel/cible; analyses détaillées repliables.
+- **Achats ponctuels CORE** : les cibles sont propres à chaque portefeuille et l'algorithme ne suppose plus de versement mensuel. Seules les espèces confirmées et disponibles peuvent financer un projet d’achat. Les cours doivent être datés. Courtage et autres frais estimés par compte puis débit réel sur avis.
+- **Ventes** : saisie d'exécution ou ordre manuel de vente, quantités contrôlées à la date d'opération, courtage plafonné à 1 %, autres frais/taxes et somme effectivement créditée contrôlés. Un projet n'est pas une vente exécutée; les ordres transmis immobilisent les titres disponibles pour d'autres ventes.
+- **Dividendes et opérations sur titres** : encaissement net après prélèvements, fractionnements/regroupements, actions gratuites, droits, dividendes en actions et expiration de droits, sur justificatifs réels.
+- **Historique** : ventes, dividendes, liquidités, gains réalisés et frais, sans simulation imposée d'apports mensuels. Les données stockées restent locales, sans transmission de transactions à une SGI.
+- **Qualification** : tests financiers des parcours achat/vente et des droits, sauvegarde mensuelle et confidentialité, recette Chromium mobile sur portefeuille fictif, APK Android hors ligne et versionCode augmenté pour mise à jour avec la même signature privée.
 
 ## Confidentialité
 L'application distribuée est **entièrement vierge**. Aucune identité, aucun compte, aucun solde, aucun investissement ou historique personnel n'est intégré au dépôt, au build ni à GitHub Pages. Import JSON volontaire, puis coffre chiffré local sur chaque appareil. Aucun JSON privé ne doit être ajouté au dépôt, à ses issues ou à ses releases.
