@@ -242,6 +242,13 @@
     if(t.type==='DIVIDEND') {
       fail(cent(t.gross)>0 && cent(t.gross)>=cent(t.tax || 0)+cent(t.other ?? t.fees ?? 0),'Montant net du dividende invalide.');
       if(!t.legacy && isFund(d,t.symbol)) fail(t.cashDistribution===true && d.instruments[t.symbol].distribution!=='capitalizing','Un FCP nécessite une distribution en cash attestée hors VL.');
+      if(t.dividendBasis) {
+        const b=t.dividendBasis;
+        fail(date(b.recordDate)&&b.recordDate<=t.date&&
+          Number.isSafeInteger(b.eligibleQty)&&b.eligibleQty>0&&cent(b.grossPerShare)>0&&
+          b.eligibleQty*cent(b.grossPerShare)===cent(t.gross),
+          'Dividende par action : quantité éligible, montant brut unitaire et date incohérents.');
+      }
     }
     if(t.type==='SPLIT')
       fail(Number.isSafeInteger(t.ratioFrom) && Number.isSafeInteger(t.ratioTo) && t.ratioFrom>0 && t.ratioTo>0 &&
@@ -399,6 +406,19 @@
   }
   function validateEntitlements(d, entities) {
     const removed=correctionTargets(d), balances=new Map();
+    for(const t of d.transactions.filter(t=>t.type==='DIVIDEND'&&t.dividendBasis&&!removed.has(t.id))) {
+      const basis=t.dividendBasis;
+      if(!d.asOf||basis.recordDate<d.asOf) {
+        fail(text(basis.statementRef,4,180),
+          'Avis du courtier requis pour un dividende dont la date d’éligibilité précède la photographie.');
+      } else {
+        if(!balances.has(basis.recordDate))
+          balances.set(basis.recordDate,ledger(d,entities,basis.recordDate).accounts);
+        const eligible=balances.get(basis.recordDate).get(t.accountId)?.positions[t.symbol]?.qty||0;
+        fail(basis.eligibleQty<=eligible,
+          'Dividende : quantité éligible supérieure aux titres détenus à la date d’enregistrement.');
+      }
+    }
     for(const t of d.transactions.filter(t=>t.entitlement&&!removed.has(t.id))) {
       const e=t.entitlement;
       fail(['BONUS','RIGHTS','STOCK_DIVIDEND'].includes(t.type) && symbol(e.underlying) &&
