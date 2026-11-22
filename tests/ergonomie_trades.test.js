@@ -73,7 +73,7 @@ test('ERG04 : achat ponctuel CORE utilise le cash réel et aucun versement mensu
   assert(plan.accounts[0].cashRemaining>=0);
   assert(Math.abs(plan.accounts[0].forecast-(account(d).total-plan.accounts[0].fees))<.001);
   assert(plan.deviation.after<=plan.deviation.before+1e-9);
-  const blank=structuredClone(d);blank.quotes.SNTS=null;
+  const blank=structuredClone(d);delete blank.quotes.SNTS;
   assert.throws(()=>F.propose(blank,input),/Cours manquant/);
 });
 
