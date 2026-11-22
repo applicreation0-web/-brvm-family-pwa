@@ -163,6 +163,8 @@ def check(first, second):
         action_dialog.locator('[name=source]').fill('Avis fictif fractionnement')
         action_dialog.locator('[name=confirmed]').check()
         action_dialog.get_by_role('button', name='Comptabiliser').click()
+        if action_dialog.is_visible():
+            raise AssertionError('Opération sur titres 1 refusée : '+str(action_dialog.locator('.modal-error').text_content()))
         expect(other.get_by_text('Écriture confirmée et enregistrée dans le journal.')).to_be_visible()
         other.get_by_role('button', name='Saisir un événement').click()
         action_dialog=other.get_by_role('dialog')
@@ -178,6 +180,8 @@ def check(first, second):
         action_dialog.locator('[name=dividendStatementRef]').fill('AVIS-E2E-70')
         action_dialog.locator('[name=confirmed]').check()
         action_dialog.get_by_role('button', name='Comptabiliser').click()
+        if action_dialog.is_visible():
+            raise AssertionError('Opération sur titres 2 refusée : '+str(action_dialog.locator('.modal-error').text_content()))
         expect(other.get_by_text('Écriture confirmée et enregistrée dans le journal.')).to_be_visible()
         other.locator('#nav [data-page=history]').press('Enter')
         expect(other.get_by_text('Fractionnement / regroupement', exact=False)).to_be_visible()
