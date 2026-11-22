@@ -56,6 +56,11 @@ test('sauvegarde ZIP: complet + exactement un JSON par compte et un manifeste',a
   const d=synthetic(),pack=V.monthlyBundle(d,new Date('2026-11-22T12:00:00Z'));
   assert.equal(pack.month,'2026-11');
   const files=unzipStored(pack.bytes);
+  const imported=V.readZip(pack.bytes);
+  assert.equal(imported.size,files.size);
+  assert.deepEqual(JSON.parse(imported.get('BRVM_COMPLET.json')),d);
+  const tampered=pack.bytes.slice();tampered[40]^=1;
+  assert.throws(()=>V.readZip(tampered),/CRC32/);
   assert.equal(files.size,5);
   assert.equal(files.get('MANIFESTE.json').accountCount,3);
   assert.equal(files.get('MANIFESTE.json').month,'2026-11');
