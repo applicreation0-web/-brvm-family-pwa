@@ -31,3 +31,25 @@ jobs:
           python -m pip install playwright==1.62.0
           python -m playwright install --with-deps chromium
           python tests/browser_e2e.py
+  package:
+    name: Archive distribuable vierge
+    needs: [finance-and-privacy, browser]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false, fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Construire et auditer le paquet distribué
+        run: |
+          python scripts/build.py dist
+          python scripts/privacy_check.py --dist dist
+      - name: Archive de distribution PWA sans données privées
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRVM-Family-V3-PWA-vierge
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error
