@@ -4,6 +4,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from os import environ
 from pathlib import Path
 import json
+import zipfile
+from io import BytesIO
 import subprocess
 import sys
 import tempfile
@@ -69,6 +71,41 @@ def check(first, second):
         upload(page, json.dumps(data, sort_keys=True).encode())
         expect(page.get_by_text('Aucune écriture ne sera ajoutée.')).to_be_visible()
         confirm_import(page)
+        expect(page.get_by_role('heading', name='Sauvegarde JSON mensuelle obligatoire')).to_be_visible()
+        page.locator('#nav [data-page=data]').press('Enter')
+        page.get_by_role('button', name='Saisir un cours / une VL').click()
+        dialog=page.get_by_role('dialog')
+        dialog.locator('[name=symbol]').fill('SNTS')
+        dialog.locator('[name=price]').fill('4000')
+        dialog.locator('[name=source]').fill('Cotation fictive recette')
+        dialog.get_by_role('button', name='Enregistrer le cours').click()
+        expect(dialog.get_by_text('Sauvegarde mensuelle obligatoire :')).to_be_visible()
+        dialog.get_by_role('button', name='Fermer').click()
+        with page.expect_download() as backup_download:
+            page.get_by_role('button', name='Sauvegarde mensuelle JSON · À effectuer').click()
+        backup=backup_download.value.path().read_bytes()
+        with zipfile.ZipFile(BytesIO(backup)) as archive:
+            names=archive.namelist()
+            assert len(names)==3
+            assert 'BRVM_COMPLET.json' in names and 'MANIFESTE.json' in names
+            assert json.loads(archive.read('BRVM_COMPLET.json'))['accounts'][0]['id']=='browser-only-a'
+        proof=page.get_by_role('dialog')
+        corrupted=bytearray(backup)
+        corrupted[40]^=1
+        proof.locator('#backup-verify').set_input_files({
+            'name':'BRVM_SAUVEGARDE_TEST.zip','mimeType':'application/zip','buffer':bytes(corrupted)})
+        expect(proof.get_by_text('Le fichier n’est pas identique au ZIP exporté.')).to_be_visible()
+        proof.locator('#backup-verify').set_input_files({
+            'name':'BRVM_SAUVEGARDE_TEST.zip','mimeType':'application/zip','buffer':backup})
+        expect(page.get_by_text('Sauvegarde du mois vérifiée.')).to_be_visible()
+        expect(page.get_by_role('heading', name='Sauvegarde JSON mensuelle obligatoire')).to_have_count(0)
+        page.get_by_role('button', name='Saisir un cours / une VL').click()
+        dialog=page.get_by_role('dialog')
+        dialog.locator('[name=symbol]').fill('SNTS')
+        dialog.locator('[name=price]').fill('4000')
+        dialog.locator('[name=source]').fill('Cotation fictive recette')
+        dialog.get_by_role('button', name='Enregistrer le cours').click()
+        expect(page.get_by_text('Cotation enregistrée.')).to_be_visible()
         total=page.locator('.total').text_content()
         page.evaluate('navigator.serviceWorker.ready.then(() => true)')
         for width in (360, 412, 768, 1366):
