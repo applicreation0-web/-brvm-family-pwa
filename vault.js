@@ -257,5 +257,123 @@
     }
     try {F.calculate(combined);return combined;} catch {return null;}
   }
-  return {start,open,encrypt,decrypt,inspect,legacyData,removeLegacy,same,merge,scope,RESET_NOTICE,FORMAT,MAX};
+
+  // Mandatory monthly backups are kept private, entirely inside the browser.
+  // An archive is only marked verified after the user re-selects the downloaded ZIP.
+  const monthKey=(now=new Date())=>String(now.getFullYear()).padStart(4,'0')+'-'+String(now.getMonth()+1).padStart(2,'0');
+  const backupDue=(data,now=new Date())=>Boolean(data?.accounts?.length && data?.settings?.monthlyBackup?.month!==monthKey(now));
+  const slug=value=>String(value||'compte').normalize('NFKD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^A-Za-z0-9]+/g,'_').replace(/^_+|_+$/g,'').slice(0,45)||'compte';
+
+  // Individual files are *current-position snapshots*, not a second replay of past trades.
+  // Complete backup, included in the same ZIP, retains the full live journal and analytics.
+  function accountSnapshot(data,accountId) {
+    const totals=F.calculate(data);
+    const current=totals.accounts.find(a=>a.id===accountId);
+    const original=data.accounts.find(a=>a.id===accountId);
+    if(!original || !current) throw Error('Compte introuvable pour la sauvegarde.');
+    const portfolio=data.portfolios.find(p=>p.id===original.portfolioId);
+    const owner=data.owners.find(o=>o.id===portfolio.ownerId);
+    const institution=data.institutions.find(s=>s.id===original.institutionId);
+    const snapshot=F.empty();
+    snapshot.asOf=F.today();
+    snapshot.source='Sauvegarde locale des comptes';
+    snapshot.settings=structuredClone(data.settings);
+    snapshot.owners=[structuredClone(owner)];
+    snapshot.portfolios=[structuredClone(portfolio)];
+    snapshot.institutions=[structuredClone(institution)];
+    snapshot.accounts=[{...structuredClone(original),cash:current.cash,reserved:current.reserved}];
+    snapshot.positions=Object.values(current.positions).filter(p=>p.qty>0).map(p=>({
+      accountId,symbol:p.symbol,qty:p.qty,cost:p.cost
+    }));
+    snapshot.quotes=structuredClone(data.quotes);
+    snapshot.instruments=structuredClone(data.instruments);
+    if(data.fxRates) snapshot.fxRates=structuredClone(data.fxRates);
+    // Keep original account records for audit, but never replay already-included cash/holdings.
+    snapshot.history=data.history.filter(h=>h.accountId===accountId).map(h=>structuredClone(h));
+    for(const t of data.transactions.filter(t=>t.accountId===accountId||t.toAccountId===accountId))
+      snapshot.history.push({...structuredClone(t),id:'archive-tx-'+t.id,kind:'ARCHIVE_TRANSACTION'});
+    for(const o of data.orders.filter(o=>o.accountId===accountId))
+      snapshot.history.push({...structuredClone(o),id:'archive-order-'+o.id,kind:'ARCHIVE_ORDER'});
+    for(const e of data.events.filter(e=>e.accountId===accountId))
+      snapshot.history.push({...structuredClone(e),id:'archive-event-'+e.id,kind:'ARCHIVE_EVENT'});
+    const refs=new Set(snapshot.history.map(h=>h.attachmentId).filter(Boolean));
+    snapshot.attachments=data.attachments.filter(a=>refs.has(a.id)).map(a=>structuredClone(a));
+    F.calculate(snapshot);
+    return snapshot;
+  }
+
+  function crc32(bytes) {
+    let crc=-1;
+    for(const byte of bytes) {
+      crc^=byte;
+      for(let i=0;i<8;i++) crc=(crc>>>1)^((crc&1)?0xEDB88320:0);
+    }
+    return (crc^(-1))>>>0;
+  }
+  function zipFiles(files) {
+    if(!Array.isArray(files)||!files.length||files.length>100) throw Error('Nombre de fichiers de sauvegarde invalide.');
+    const encoder=new TextEncoder(), local=[], central=[];
+    let offset=0,total=0;
+    const w=(view,offset,value,size)=>size===2?view.setUint16(offset,value,true):view.setUint32(offset,value,true);
+    for(const file of files) {
+      if(!/^[A-Za-z0-9_./-]+\.json$/.test(file.name)||file.name.includes('..'))
+        throw Error('Nom de fichier ZIP invalide.');
+      const filename=encoder.encode(file.name), body=encoder.encode(file.data);
+      if(body.length>MAX) throw Error('JSON individuel trop volumineux.');
+      total+=body.length;
+      if(total>128*1024*1024) throw Error('Archive mensuelle supérieure à 128 Mio.');
+      const crc=crc32(body);
+      const localHeader=new Uint8Array(30+filename.length);
+      const v=new DataView(localHeader.buffer);
+      w(v,0,0x04034b50,4);w(v,4,20,2);w(v,6,0x800,2);
+      w(v,14,crc,4);w(v,18,body.length,4);w(v,22,body.length,4);
+      w(v,26,filename.length,2);localHeader.set(filename,30);
+      local.push(localHeader,body);
+      const entry=new Uint8Array(46+filename.length);
+      const c=new DataView(entry.buffer);
+      w(c,0,0x02014b50,4);w(c,4,20,2);w(c,6,20,2);w(c,8,0x800,2);
+      w(c,16,crc,4);w(c,20,body.length,4);w(c,24,body.length,4);
+      w(c,28,filename.length,2);w(c,42,offset,4);entry.set(filename,46);
+      central.push(entry);
+      offset+=localHeader.length+body.length;
+    }
+    const centralLength=central.reduce((a,b)=>a+b.length,0);
+    const end=new Uint8Array(22), e=new DataView(end.buffer);
+    w(e,0,0x06054b50,4);w(e,8,files.length,2);w(e,10,files.length,2);
+    w(e,12,centralLength,4);w(e,16,offset,4);
+    const output=new Uint8Array(offset+centralLength+22);
+    let cursor=0;
+    for(const piece of [...local,...central,end]) {output.set(piece,cursor);cursor+=piece.length;}
+    return output;
+  }
+  function monthlyBundle(data,now=new Date()) {
+    F.calculate(data);
+    if(!data.accounts.length) throw Error('Aucun compte à sauvegarder.');
+    const month=monthKey(now);
+    const files=[{name:'BRVM_COMPLET.json',data:JSON.stringify(data,null,2)}];
+    const used=new Set(['BRVM_COMPLET.json']);
+    for(const [i,a] of data.accounts.entries()) {
+      const p=data.portfolios.find(x=>x.id===a.portfolioId);
+      const owner=data.owners.find(x=>x.id===p.ownerId);
+      const sgi=data.institutions.find(x=>x.id===a.institutionId);
+      let name='comptes/'+slug(owner.label)+'_'+slug(sgi.label)+'.json';
+      if(used.has(name)) name='comptes/'+slug(owner.label)+'_'+slug(sgi.label)+'_'+(i+1)+'.json';
+      used.add(name);
+      files.push({name,data:JSON.stringify(accountSnapshot(data,a.id),null,2)});
+    }
+    files.push({name:'MANIFESTE.json',data:JSON.stringify({
+      format:'brvm-monthly-bundle-v1',month,generatedAt:now.toISOString(),
+      accountCount:data.accounts.length,files:files.map(f=>f.name),
+      note:'Le JSON complet restaure le journal actif; les JSON individuels sont des instantanes avec historique archive.'
+    },null,2)});
+    return {month,files,bytes:zipFiles(files)};
+  }
+  async function sha256(bytes) {
+    const digest=await crypto.subtle.digest('SHA-256',bytes);
+    return Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join('');
+  }
+
+  return {start,open,encrypt,decrypt,inspect,legacyData,removeLegacy,same,merge,scope,RESET_NOTICE,FORMAT,MAX,
+    monthKey,backupDue,accountSnapshot,zipFiles,monthlyBundle,sha256};
 });
