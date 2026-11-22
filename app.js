@@ -170,7 +170,7 @@
     const entries=titles.map(([symbol,value])=>({symbol,value}));
     if(cash>0) entries.push({symbol:'Espèces',value:cash});
     const total=entries.reduce((n,x)=>n+x.value,0);
-    if(!total) return pane('Répartition réelle',empty('Aucune valeur connue à représenter. Ajoutez les cours des titres.'), 'Valorisations issues des cours disponibles');
+    if(!total) return `<article class="pane allocation">${heading('Répartition réelle · '+(sgiFilter?institution(sgiFilter):'Toutes les SGI'))}${sgiPicker(p)}${empty('Aucun titre valorisé ni espèces sur cette sélection. Changez de SGI ou renseignez les cours.')}${go('accounts','Voir les comptes')}</article>`;
     // Traits sombres explicites entre parts : deux couleurs proches ne fusionnent pas visuellement.
     let start=0;const stops=entries.flatMap(x=>{
       const from=start;start+=x.value/total*100;
