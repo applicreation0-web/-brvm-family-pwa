@@ -1,0 +1,72 @@
+name: Android APK indépendant — compilation et confidentialité
+on:
+  push:
+    branches: [main, work/android-apk-20261122]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    name: APK Android hors ligne, non signé publiquement
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+          log-accepted-android-sdk-licenses: 'false'
+      - name: Préparer Android API 35
+        run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Régression financière et confidentialité historique
+        run: |
+          python scripts/privacy_check.py
+          npm test
+          python -m unittest discover -s tests -p 'test_*.py'
+      - name: Vérifier les assets Android, les flux privés et les imports JSON
+        run: |
+          python scripts/build_android.py
+          python tests/test_android_package.py
+      - name: Assembler une application Android indépendante sans secret
+        run: gradle -p android --no-daemon :app:assembleRelease
+      - name: Vérifier et aligner le paquet sans clé privée
+        run: |
+          mkdir -p android/build/distribution
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -p -f 4 \
+            android/app/build/outputs/apk/release/app-release-unsigned.apk \
+            android/build/distribution/BRVM-Family-V3-unsigned-aligned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c 4 \
+            android/build/distribution/BRVM-Family-V3-unsigned-aligned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging \
+            android/build/distribution/BRVM-Family-V3-unsigned-aligned.apk | grep "package: name='org.brvmfamily.app'"
+          java -jar "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" --version
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" \
+            android/build/distribution/apksigner.jar
+          sha256sum android/build/distribution/BRVM-Family-V3-unsigned-aligned.apk > \
+            android/build/distribution/SHA256SUMS.txt
+      - name: Kit de signature privée hors du dépôt et APK compilé
+        uses: actions/upload-artifact@v4
+        with:
+          name: BRVM-Family-V3-APK-unsigned-and-private-signing-tools
+          path: android/build/distribution/
+          retention-days: 30
+          if-no-files-found: error
