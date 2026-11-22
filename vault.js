@@ -363,6 +363,35 @@
     for(const piece of [...local,...central,end]) {output.set(piece,cursor);cursor+=piece.length;}
     return output;
   }
+  function readZip(bytes) {
+    if(!(bytes instanceof Uint8Array) || bytes.length>128*1024*1024)
+      throw Error('Archive ZIP invalide ou supérieure à 128 Mio.');
+    const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength),decoder=new TextDecoder('utf-8',{fatal:true});
+    const files=new Map();
+    let offset=0,total=0;
+    while(offset+30<=bytes.length && view.getUint32(offset,true)===0x04034b50) {
+      const flags=view.getUint16(offset+6,true), method=view.getUint16(offset+8,true);
+      const expected=view.getUint32(offset+14,true),size=view.getUint32(offset+18,true);
+      const compressed=view.getUint32(offset+22,true),nameLength=view.getUint16(offset+26,true);
+      const extra=view.getUint16(offset+28,true);
+      if(method!==0 || (flags&8) || compressed!==size || size>MAX || files.size>=100)
+        throw Error('ZIP non pris en charge ou incomplet.');
+      const start=offset+30+nameLength+extra,end=start+size;
+      if(start>bytes.length || end>bytes.length) throw Error('Fichier ZIP tronqué.');
+      const name=decoder.decode(bytes.subarray(offset+30,offset+30+nameLength));
+      if(!/^[A-Za-z0-9_./-]+\.json$/.test(name)||name.includes('..')||files.has(name))
+        throw Error('Nom ou doublon de fichier dans le ZIP.');
+      const content=bytes.subarray(start,end);
+      if(crc32(content)!==expected) throw Error('Intégrité ZIP incorrecte (CRC32).');
+      total+=size;
+      if(total>128*1024*1024) throw Error('Contenu ZIP trop volumineux.');
+      files.set(name,decoder.decode(content));
+      offset=end;
+    }
+    if(files.size===0 || offset+4>bytes.length || view.getUint32(offset,true)!==0x02014b50)
+      throw Error('Répertoire ZIP absent ou invalide.');
+    return files;
+  }
   function monthlyBundle(data,now=new Date()) {
     F.calculate(data);
     if(!data.accounts.length) throw Error('Aucun compte à sauvegarder.');
@@ -391,5 +420,5 @@
   }
 
   return {start,open,encrypt,decrypt,inspect,legacyData,removeLegacy,same,merge,scope,RESET_NOTICE,FORMAT,MAX,
-    monthKey,backupDue,accountSnapshot,zipFiles,monthlyBundle,sha256};
+    monthKey,backupDue,accountSnapshot,zipFiles,readZip,monthlyBundle,sha256};
 });
