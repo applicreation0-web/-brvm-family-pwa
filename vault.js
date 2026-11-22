@@ -221,25 +221,39 @@
   const same=(a,b)=>signature(a)===signature(b);
   function merge(current,incoming) {
     if(same(current,incoming)) return current;
-    // A disjoint addition is provable for entities that share precisely the same snapshot and valuation settings.
-    const entities=['owners','portfolios','institutions','accounts','positions','transactions','orders','plans','events','attachments'];
+    // Each independent account may share the exact same owner, portfolio and SGI
+    // with another import. All other account data must be strictly disjoint.
+    // A common snapshot baseline is mandatory; never merge differing quotes,
+    // opening snapshots or configuration implicitly.
+    const entities=['owners','portfolios','institutions','accounts','positions','transactions',
+      'orders','plans','events','attachments','history'];
     const baseline=data=>Object.fromEntries(Object.entries(data).filter(([k])=>!entities.includes(k)));
     if(!same(baseline(current),baseline(incoming))) return null;
-    const conflicts=(a,b,identity)=>{const known=new Set(a.map(identity));return b.some(x=>known.has(identity(x)));};
-    for(const k of ['owners','portfolios','accounts','transactions','orders','plans','events','attachments']) {
-      if(conflicts(current[k],incoming[k],x=>x.id)) return null;
+    const shared=new Set(['owners','portfolios','institutions']);
+    const withIds=['owners','portfolios','institutions','accounts','transactions',
+      'orders','plans','events','attachments'];
+    for(const key of [...withIds,'history']) {
+      const existing=new Map(current[key].filter(item=>typeof item?.id==='string').map(item=>[item.id,item]));
+      for(const item of incoming[key]) {
+        if(withIds.includes(key) && typeof item?.id!=='string') return null;
+        if(typeof item?.id!=='string') continue; // Legacy history entries can be unkeyed.
+        const previous=existing.get(item.id);
+        if(previous && (!shared.has(key) || !same(previous,item))) return null;
+      }
     }
-    // A split is global to the instrument and would be replayed into unrelated incoming accounts.
+    // A split transaction is globally replayed into another account by the
+    // underlying engine. Do not bypass this rule; audited opening snapshots
+    // can represent earlier splits in the non-replayed history instead.
     if([...current.transactions,...incoming.transactions].some(t=>t.type==='SPLIT')) return null;
     const combined=structuredClone(current);
-    for(const k of entities) {
-      if(k==='institutions') {
-        for(const entity of incoming[k]) {
-          const former=current[k].find(x=>x.id===entity.id);
-          if(former && !same(former,entity)) return null;
-          if(!former) combined[k].push(entity);
+    for(const key of entities) {
+      if(shared.has(key)) {
+        const known=new Set(combined[key].map(x=>x.id));
+        for(const item of incoming[key]) if(!known.has(item.id)) {
+          combined[key].push(structuredClone(item));
+          known.add(item.id);
         }
-      } else combined[k].push(...incoming[k]);
+      } else combined[key].push(...structuredClone(incoming[key]));
     }
     try {F.calculate(combined);return combined;} catch {return null;}
   }
