@@ -232,6 +232,32 @@
   function coreWatch(p) {
     const review=R.assess(db,p.id);
     const summary=review.due?'Revue semestrielle à examiner': 'Prochaine revue : '+showDate(review.dueOn);
+    const selection=R.selectUniverse(db);
+    const qualified=selection.core.filter(x=>x.score!==null).length;
+    const scoreRows=selection.core.map(x=>
+      '<li class="watch-issuer"><strong>'+esc(x.symbol)+'</strong> · '+
+      (x.score===null?'Non classable — '+esc(x.status):x.score+'/100 — '+esc(x.status))+
+      (x.score===null?'<p class="quiet">'+esc(x.missing.slice(0,2).join(' · '))+'</p>':'')+'</li>').join('');
+    const candidateRows=selection.alternatives.slice(0,5).map(x=>
+      '<li class="watch-issuer"><strong>'+esc(x.symbol)+'</strong> · '+x.score+
+      '/100 · admissibilité documentaire à recouper</li>').join('');
+    const suggested=selection.replacements.slice(0,3).map(x=>
+      '<li>'+esc(x.from)+' → '+esc(x.to)+' ('+x.fromScore+
+      ' → '+x.toScore+'/100) · décision manuelle requise</li>').join('');
+    const selectionPanel='<details class="core-selection"><summary>Critères de sélection · '+
+      qualified+'/7 titres CORE classables</summary>'+
+      '<p class="quiet">Filtre préalable : activité conforme et ratios financiers charia documentés ; absence de preuve = non classable. '+
+      'Note /100 : solidité 30, valorisation 20, dividendes 15, liquidité 15, cours 6 mois 10, gouvernance 10. '+
+      'Candidat à partir de 75 points ; surveiller de 55 à 74 ; réexaminer sous 55. '+
+      'Un remplaçant doit dépasser le sortant de 10 points au moins.</p>'+
+      '<p class="quiet">Le score exige des documents et des périodes datés ; il ne remplace pas la vérification des sources. '+
+      'La veille externe et les cotations ne sont pas synchronisées automatiquement avec cet appareil.</p>'+
+      '<ul class="watch-list">'+scoreRows+'</ul>'+
+      '<p class="quiet">Alternatives BRVM préqualifiées : '+selection.alternatives.length+
+      '. Une absence de candidat peut refléter des données manquantes.</p>'+
+      (candidateRows?'<ul class="watch-list">'+candidateRows+'</ul>':'')+
+      (suggested?'<p>Propositions à examiner :</p><ul>'+suggested+'</ul>':'')+
+      '</details>';
     const tracked=review.rows.map(x=>{
       const main=x.quantity>0?'<strong>'+fc(x.market)+'</strong> · coût '+fc(x.cost):'<span class="quiet">Aucune position détenue</span>';
       const six=x.change
@@ -258,6 +284,7 @@
         <p class="quiet">La revue peut conduire à conserver, surveiller ou proposer de modifier CORE. Elle ne vend, n’achète ni ne change les cibles automatiquement. Les documents publics doivent être vérifiés avant décision.</p>
         ${review.due?btn('ack-core-review','Consigner l’examen de la revue',p.id,'primary'):''}
       </details>
+      ${selectionPanel}
     </article>`;
   }
   function dashboard() {
