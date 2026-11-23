@@ -1,4 +1,4 @@
-# BRVM Family V3.4 — GitHub Pages et APK Android
+# BRVM Family V3.6 — GitHub Pages et APK Android
 
 PWA indépendante, hébergée directement sur GitHub Pages. Aucun hébergement Vercel ou constructeur d'applications n'est nécessaire.
 
