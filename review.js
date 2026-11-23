@@ -98,6 +98,7 @@
     minCandidateScore:75, minScoreAdvantage:10
   });
   const SOURCE_KEYS=['screening','financial','valuation','dividends','liquidity','prices','governance'];
+  const SOURCE_FRESH_MONTHS={screening:12,financial:18,valuation:1,dividends:18,liquidity:1,prices:1,governance:3};
   function evaluateSelection(instrument,now=F.today()) {
     const e=instrument?.selection;
     const missing=[], blocked=[];
@@ -111,6 +112,8 @@
       const s=sources[k];
       if(!s||!url(s.url)||!F.date(s.date)||s.date>now)
         missing.push('Source datée manquante : '+k);
+      else if(s.date<addMonths(now,-SOURCE_FRESH_MONTHS[k]))
+        missing.push('Source trop ancienne : '+k);
     }
     if(e.prohibitedActivity===true || e.conventionalFinance===true)
       blocked.push('Activité exclue par la politique CORE');
@@ -144,6 +147,7 @@
       ['sixMonthPriceReturn','Cours sur six mois ajusté',v=>valid(v)&&v>=-1&&v<=100],
       ['benchmarkSixMonthReturn','Indice sur six mois',v=>valid(v)&&v>=-1&&v<=100]
     ]) if(!condition(e[key])) missing.push(label);
+    if(e.audited!==true) missing.push('Certification des états annuels non confirmée');
     if(!F.date(e.annualReportDate)||e.annualReportDate>now)
       missing.push('Date des états annuels audités');
     else if(e.annualReportDate<addMonths(now,-18))
