@@ -37,6 +37,8 @@ jobs:
           log-accepted-android-sdk-licenses: 'false'
       - name: Préparer Android API 35
         run: sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
+      - name: Installer le moteur de génération des icônes
+        run: python -m pip install cairosvg==2.8.2
       - name: Régression financière et confidentialité historique
         run: |
           python scripts/privacy_check.py
