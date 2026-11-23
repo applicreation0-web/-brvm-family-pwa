@@ -232,6 +232,7 @@
       if(value.settings) {
         value.settings=structuredClone(value.settings);
         delete value.settings.monthlyBackup; // a backup stamp is device-local evidence, not financial data
+        delete value.settings.coreReviews; // per-portfolio private review status stays local to the owner
       }
       return value;
     };
@@ -287,6 +288,8 @@
     snapshot.source='Sauvegarde locale des comptes';
     snapshot.settings=structuredClone(data.settings);
     delete snapshot.settings.monthlyBackup; // the receiving device must make its own monthly backup
+    delete snapshot.settings.coreReviews; // never reveal other owners' review state in a per-account archive
+    if(data.quoteHistory) snapshot.quoteHistory=structuredClone(data.quoteHistory);
     snapshot.owners=[structuredClone(owner)];
     snapshot.portfolios=[structuredClone(portfolio)];
     snapshot.institutions=[structuredClone(institution)];
