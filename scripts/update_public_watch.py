@@ -67,6 +67,14 @@ def iso_date(text):
             return datetime(int(match[3]), int(match[2]), int(match[1])).date().isoformat()
         except ValueError:
             return None
+    match = re.search(r"\\b(\\d{1,2})\\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\\s+(\\d{4})", text.lower())
+    if match:
+        month = {"janvier":1,"février":2,"mars":3,"avril":4,"mai":5,"juin":6,
+                 "juillet":7,"août":8,"septembre":9,"octobre":10,"novembre":11,"décembre":12}[match[2]]
+        try:
+            return datetime(int(match[3]), month, int(match[1])).date().isoformat()
+        except ValueError:
+            return None
     return None
 
 
@@ -88,7 +96,8 @@ def records(kind, page, html):
             issuer = cells[0]["text"][:80]
             published = None
             title = ("Avis de dividende — " if kind == "dividende" else "Avis de fractionnement — ") + issuer
-            event = None
+            event = iso_date(cells[4]["text"] if kind=="dividende" and len(cells)>4 else
+                             cells[3]["text"] if len(cells)>3 else "")
         if not issuer or not title or (kind == "communique" and not published):
             continue
         items.append({"type":kind, "issuer":issuer, "title":title, "url":links[0],
@@ -101,9 +110,8 @@ def produce(fetch=None, today=None):
     def default_fetch(url):
         req = Request(url, headers={"User-Agent":"BRVM-Family-Public-Document-Watch/1.0 (source links only)"})
         with urlopen(req, timeout=25) as response:
-            if response.status != 200 or len(response.read(1)) == 0:
-                raise RuntimeError("Source officielle vide ou invalide")
-        with urlopen(req, timeout=25) as response:
+            if response.status != 200:
+                raise RuntimeError("Source officielle invalide")
             data = response.read(1_000_001)
         if len(data)>1_000_000:
             raise RuntimeError("Source officielle trop volumineuse")
@@ -118,7 +126,7 @@ def produce(fetch=None, today=None):
             raise RuntimeError("Aucun document exploitable pour " + kind)
         succeeded.append(page)
         items.extend(parsed)
-    items.sort(key=lambda v: (v["publishedOn"] or "", v["type"], v["issuer"]), reverse=True)
+    items.sort(key=lambda v: (v["publishedOn"] or v["eventOn"] or "", v["type"], v["issuer"]), reverse=True)
     return {"schema":"brvm-public-watch-v1", "checkedOn":checked,
             "sources":succeeded, "items":items[:75]}
 
