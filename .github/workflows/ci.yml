@@ -41,9 +41,21 @@ jobs:
           path: test_artifacts/
           retention-days: 30
           if-no-files-found: error
+  public-watch-smoke:
+    name: Collecte publique BRVM depuis GitHub Actions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: Vérifier la collecte réelle et le schéma sans exposer des cours
+        run: |
+          python scripts/update_public_watch.py
+          python -m unittest discover -s tests -p 'test_public_watch.py'
   package:
     name: Archive distribuable vierge
-    needs: [finance-and-privacy, browser]
+    needs: [finance-and-privacy, browser, public-watch-smoke]
     runs-on: ubuntu-latest
     permissions:
       contents: read
