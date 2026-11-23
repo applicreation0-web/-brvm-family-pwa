@@ -16,7 +16,7 @@ function evidence(){
     dividendsPaidYears3Y:3,netYieldPct:4.5,payoutRatio:.45,
     tradedSessionShare60:.85,medianDailyTurnoverXof:8000000,
     sixMonthPriceReturn:.11,benchmarkSixMonthReturn:.08,
-    annualReportDate:'2026-06-01',governanceClear:true,suspended:false
+    annualReportDate:'2026-06-01',audited:true,governanceClear:true,suspended:false
   };
 }
 test('SEL01 : 100 points, 6 critères explicites, candidat vérifiable',()=>{
@@ -45,6 +45,8 @@ test('SEL03 : refus des sources, comptes ou valeurs manquants et documents péri
     e=>delete e.sources.prices,
     e=>e.sources.dividends.url='',
     e=>e.sources.financial.date='2026-11-24',
+    e=>e.sources.prices.date='2026-07-15',
+    e=>e.audited=false,
     e=>delete e.interestAssets,
     e=>delete e.revenues3Y,
     e=>e.annualReportDate='2024-01-01',
