@@ -187,6 +187,7 @@ def check(first, second):
         page.set_viewport_size({'width':390,'height':850})
         shots=ROOT / 'test_artifacts';shots.mkdir(exist_ok=True)
         page.screenshot(path=str(shots / 'operations_fictives_android_390px.png'),full_page=True)
+        page.set_viewport_size({'width':1366,'height':900})
         page.locator('#nav [data-page=history]').press('Enter')
         expect(page.get_by_text('Frais de compte · Virement / transfert', exact=False).first).to_be_visible()
         page.locator('#nav [data-page=accounts]').press('Enter')
