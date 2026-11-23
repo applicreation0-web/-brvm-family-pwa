@@ -8,6 +8,14 @@ Une fois la publication GitHub Pages activée et les tests réussis :
 
 Sur Android, ouvrir l'adresse dans Chrome puis installer l'application depuis le menu du navigateur.
 
+## Ergonomie 3.3 — un seul espace Opérations
+- Le menu « Opérations » regroupe Versement ponctuel, Achat exécuté, Vente exécutée, Retrait et Dividende. L'ancien écran « Ordres achat / vente » est intégré dans une section repliable du même espace ; les projets CORE sont également repliables. Les accès rapides du tableau de bord ouvrent les mêmes formulaires, jamais un module comptable concurrent.
+- Versement : saisir le **montant réellement crédité** sur le compte SGI à réception de l'avis ; aucun financement fictif ni dépôt mensuel. Retrait : montant réellement débité. Transfert entre comptes : montants réels et conversion documentée.
+- Frais d'achat/vente : courtage réel (contrôlé à 1 % maximum du brut), autres frais, taxes et **montant total du bordereau strictement égal** au montant reconstitué. Le débit de l'achat comprend tous les frais saisis, le crédit de la vente est net des frais saisis.
+- Frais de compte indépendants : « Autres opérations → Frais du compte » avec catégorie (garde/tenue, transfert, taxe distincte, autres), montant réellement débité et référence ; évite de les compter deux fois s'ils sont déjà compris dans le montant net saisi.
+- Estimations CORE : courtage et autres frais proportionnels configurés par compte, **pas** une garantie d'inclure les taxes futures ou les forfaits non configurés. Comparer ensuite l'avis réel et saisir ses composantes ; l'application ne prélève aucun frais.
+- Sauvegarde JSON mensuelle obligatoire et import privé conservés.
+
 ## Ergonomie 3.1 — cinq gestes essentiels
 - **Accueil** : actions directes Acheter, Vendre, Dividende, Opérations sur titres, Sauvegarder. Camembert des actions et espèces, valeur en FCFA, pourcentages; tableau de bord CORE réel/cible; analyses détaillées repliables.
 - **Achats ponctuels CORE** : les cibles sont propres à chaque portefeuille et l'algorithme ne suppose plus de versement mensuel. Seules les espèces confirmées et disponibles peuvent financer un projet d’achat. Les cours doivent être datés. Courtage et autres frais estimés par compte puis débit réel sur avis.
