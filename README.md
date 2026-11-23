@@ -1,6 +1,35 @@
-# BRVM Family V3.4 — GitHub Pages et APK Android
+# BRVM Family V3.6 — GitHub Pages et APK Android
 
 PWA indépendante, hébergée directement sur GitHub Pages. Aucun hébergement Vercel ou constructeur d'applications n'est nécessaire.
+
+
+## Veille documentaire autonome — sources officielles publiques
+- Un workflow GitHub Actions `.github/workflows/public-watch.yml` vérifie les pages publiques BRVM en semaine, copie uniquement les intitulés brefs et liens des communiqués, avis de dividendes et fractionnements, puis actualise `market/public-watch.json` dans le dépôt.
+- La PWA récupère uniquement ce fichier public sur son propre domaine, sans envoyer d'informations sur les comptes ou le portefeuille. Une source indisponible ou un document non vérifiable n'est jamais traité comme une information certifiée.
+- **La veille documentaire ne remplace ni les cotations autorisées, ni l'analyse complète des états financiers** : le barème CORE repose toujours sur les dossiers de sélection justifiés et disponibles localement. Le flux de prix commercial demeure désactivé.
+- Le workflow n'édite jamais de portefeuille et ne transmet aucune donnée financière privée.
+
+## Qualification CORE automatisée — évolution en cours de recette
+Le module `review.js` évalue automatiquement les sept valeurs CORE et les autres actions explicitement documentées dans le catalogue local `instruments`. **Un cours seul ne suffit pas à attribuer une note.** La veille planifiée recherche indépendamment des faits publics et des candidats hors CORE ; elle n'est pas encore synchronisée automatiquement avec le navigateur.
+
+### Exclusion et contrôle de provenance avant tout score
+- Exclure les activités prohibées : banques à intérêt et finance/assurance conventionnelle, alcool, tabac et jeux ; une activité non qualifiée est « données insuffisantes », jamais « conforme ».
+- Vérifier, lorsque les comptes publiés permettent la ventilation : dette portant intérêt / actifs <=33 %, actifs portant intérêt / actifs <=33 %, revenus non conformes / chiffre d'affaires <5 %. Ce sont des seuils de prudence choisis pour cette stratégie, pas une certification religieuse.
+- Refuser une entrée si des ratios ne sont pas calculables, si les documents sont périmés, si la cote est suspendue ou si un signal de gouvernance majeur est non résolu.
+- Exiger sept références datées par émetteur (filtrage, finances, valorisation, dividendes, liquidité, prix et gouvernance), et un rapport annuel audité daté de moins de 18 mois. La simple présence d'une URL ne garantit pas son exactitude : recouper avec le document source.
+
+### Barème, 100 points
+- **Solidité 30** : bénéfice net positif >=2 des 3 derniers exercices (10), CA final supérieur au premier sur 3 exercices (10), dette nette / EBITDA <=2,5 (10).
+- **Valorisation 20** : PER positif et <=médiane sectorielle (10 ; 5 si jusqu'à 1,25×), EV/EBITDA <=médiane sectorielle (10 ; 5 si jusqu'à 1,25×).
+- **Dividendes 15** : versés >=2 des 3 derniers exercices (10), rendement net >0 et distribution <=80 % (5).
+- **Liquidité 15** : négocié sur >=70 % des 60 séances (10), médiane quotidienne des transactions >=5 M FCFA (5 ; 3 si >=1 M).
+- **Tendance 10** : évolution du cours ajusté des fractionnements sur 6 mois supérieure/égale à celle de l'indice BRVM Composite (10 ; 5 à moins de 5 points).
+- **Publication/gouvernance 10** : états annuels audités récents (5), absence de signal majeur et de suspension (5).
+
+**Décision :** score complet >=75 : candidat ou conserver ; 55–74 : surveiller ; <55 : réexaminer. Un candidat hors CORE doit atteindre 75 et dépasser un sortant de 10 points pour apparaître dans les propositions. Le système propose, mais ne modifie jamais les cibles, ne touche pas aux comptes et n'émet aucun ordre. Des statistiques ou justificatifs manquants signifient `score=null` et un statut non classable, jamais zéro ou des données inventées.
+
+### Autonomie et limite explicite
+L'analyse locale se recalcule automatiquement à l'ouverture à partir du dossier documenté local, mais **ne recherche pas toute seule les cours ou rapports de l'ensemble de la cote**. Un flux commercial ou une source de redistribution nécessitant autorisation ne sera pas activé sans droits établis : `market/feed.json` reste désactivé. Les deux surveillances externes déjà programmées assurent la recherche documentaire régulière et la revue semestrielle ; leur résultat n'est pas encore importé dans la PWA. Une vraie sélection 100 % sans intervention requiert une source autorisée, une ingestion publique vérifiable et un transfert sécurisé de ses conclusions vers l'application.
 
 ## Installer
 Une fois la publication GitHub Pages activée et les tests réussis :

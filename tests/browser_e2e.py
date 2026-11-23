@@ -122,8 +122,10 @@ def check(first, second):
         watch=page.locator('.core-watch')
         expect(watch.get_by_role('heading', name='Veille des actions CORE')).to_be_visible()
         expect(watch.get_by_text('Prochaine revue : 23/05/2027', exact=False)).to_be_visible()
-        watch.locator('details').evaluate('(el)=>el.open=true')
-        expect(watch.locator('.watch-issuer')).to_have_count(7)
+        watch.locator('details').first.evaluate('(el)=>el.open=true')
+        expect(watch.locator('details').first.locator('.watch-issuer')).to_have_count(7)
+        watch.locator('details.core-selection').evaluate('(el)=>el.open=true')
+        expect(watch.locator('details.core-selection')).to_contain_text('0/7 titres CORE classables')
         expect(watch.get_by_text('Historique de cours comparable sur 6 mois insuffisant', exact=False).first).to_be_visible()
         assert page.locator('.core-watch [data-action=ack-core-review]').count()==0
         expect(page.get_by_role('button', name='Acheter', exact=True)).to_be_visible()

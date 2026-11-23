@@ -7,7 +7,7 @@ root = Path(__file__).resolve().parents[1]
 shell = [
     'index.html', 'style.css', 'engine.js', 'finance.js', 'vault.js',
     'quotes.js', 'analysis.js', 'review.js', 'app.js', 'sw.js', 'manifest.webmanifest',
-    'icons/icon-192.png', 'icons/icon-512.png', '.nojekyll', 'market/feed.json',
+    'icons/icon-192.png', 'icons/icon-512.png', '.nojekyll', 'market/feed.json', 'market/public-watch.json',
 ]
 
 if __name__ == '__main__':
