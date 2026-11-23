@@ -21,6 +21,7 @@
     DIVIDEND:'Dividende encaissé',SPLIT:'Fractionnement / regroupement',BONUS:'Actions gratuites',RIGHTS:'Droits',
     STOCK_DIVIDEND:'Dividende en actions',RIGHTS_EXPIRY:'Expiration de droits',TRANSFER:'Transfert',CORRECTION:'Rectification'};
   const basis={manual:'Saisi localement',official:'Officiel (source déclarée)',provisional:'Provisoire',theoretical:'Théorique après split',execution:'Prix d’exécution'};
+  const feeCategories={tenue:'Tenue de compte / garde',virement:'Virement / transfert',taxe:'Taxe distincte',autre:'Autres frais prélevés'};
   const pages={dashboard:['Vue d’ensemble','▦'],accounts:['Comptes et positions','▤'],invest:['Opérations','⇄'],
     events:['Dividendes et FCP','◈'],history:['Historique et analyses','◷'],settings:['Cibles et risques','⚙'],data:['Données et sauvegarde','⬡']};
   let store, record, db, calc, tab='dashboard', portfolioId='', busy=false, refreshing=false, plan=null, comparison=null, planInputs=null, importPreview=null;
@@ -374,7 +375,7 @@
       ${field('brokerRef','Référence du justificatif',input('brokerRef','','text','required minlength="4" maxlength="180"'))}</div>
       <div class="fields" data-types="BUY SELL DIVIDEND SPLIT BONUS RIGHTS STOCK_DIVIDEND RIGHTS_EXPIRY">${field('symbol','Symbole',symInput(preset.symbol||''))}</div>
       <div class="fields" data-types="DEPOSIT WITHDRAW FEE TRANSFER">${field('amount','Montant réellement crédité ou débité sur le compte (hors frais séparés)',money('amount'))}</div>
-      <div class="fields" data-types="FEE">${field('feeCategory','Catégorie de frais',select('feeCategory',[[ 'tenue','Tenue de compte / garde'],['virement','Virement / transfert'],['taxe','Taxe distincte'],['autre','Autres frais prélevés']]))}<p class="quiet">Saisissez uniquement les frais effectivement débités sur ce compte et absents du montant déjà comptabilisé, pour éviter un double débit.</p></div>
+      <div class="fields" data-types="FEE">${field('feeCategory','Catégorie de frais',select('feeCategory',Object.entries(feeCategories)))}<p class="quiet">Saisissez uniquement les frais effectivement débités sur ce compte et absents du montant déjà comptabilisé, pour éviter un double débit.</p></div>
       <div class="fields" data-types="TRANSFER">${field('toAccountId','Compte destinataire',select('toAccountId',accountsOptions(list),'','required'))}</div>
       <div class="fields" data-fx-transfer hidden>
         ${field('toAmount','Montant reçu en devise du compte destinataire',money('toAmount'))}
@@ -522,7 +523,7 @@
     if(t.type==='DIVIDEND') value=fc(t.gross-(t.tax||0)-(t.other??t.fees??0));
     if(t.amount!=null && !['BUY','SELL','DIVIDEND'].includes(t.type)) value=amountIn(t.amount,findAccount(t.accountId)?.currency)+(t.exchange?' → '+amountIn(t.toAmount,findAccount(t.toAccountId)?.currency):'');
     return [showDate(t.date),`${esc(accName(t.accountId))}${t.toAccountId?'<br>Vers '+esc(accName(t.toAccountId)):''}`,
-      esc(labels[t.type])+(t.symbol?' · '+esc(t.symbol):'')+
+      esc(labels[t.type])+(t.symbol?' · '+esc(t.symbol):'')+(t.type==='FEE'&&t.feeCategory?' · '+esc(feeCategories[t.feeCategory]||'Frais'):'')+
       (t.reinvests?' · Réinvestissement':db.transactions.some(x=>x.corrects===t.id)?' · Rectifiée':''),value,
       esc(t.brokerRef)+(t.note?'<br><small>'+esc(t.note)+'</small>':''),
       `<div class="actions">${btn('tx-detail','Détail',t.id)}${t.attachmentId?btn('attachment','Télécharger la pièce',t.attachmentId):''}
@@ -712,10 +713,10 @@
     return attachment;
   }
   function exportJournal() {
-    const rows=[['Date','Compte','Destination','Opération','Titre','Quantité','Montant','Devise','Montant reçu','Devise reçue','Date du change','Référence du change','Courtage','Autres frais','Taxe','Référence','Rectifie']];
+    const rows=[['Date','Compte','Destination','Opération','Catégorie de frais','Titre','Quantité','Montant','Devise','Montant reçu','Devise reçue','Date du change','Référence du change','Courtage','Autres frais','Taxe','Référence','Rectifie']];
     for(const t of db.transactions.filter(t=>!historyMonth||t.date.startsWith(historyMonth))) {
       const amount=['BUY','SELL'].includes(t.type)?F.tradeAmounts(t).total/100:t.type==='DIVIDEND'?t.gross-(t.tax||0)-(t.other??t.fees??0):t.amount;
-      rows.push([t.date,accName(t.accountId),t.toAccountId?accName(t.toAccountId):'',labels[t.type],t.symbol,t.qty,amount,findAccount(t.accountId)?.currency,t.toAmount,t.toAccountId?findAccount(t.toAccountId)?.currency:'',t.exchange?.date,t.exchange?.source,t.broker,t.other??t.fees,t.tax,t.brokerRef,t.corrects]);
+      rows.push([t.date,accName(t.accountId),t.toAccountId?accName(t.toAccountId):'',labels[t.type],t.type==='FEE'?(feeCategories[t.feeCategory]||'Non précisé'):'',t.symbol,t.qty,amount,findAccount(t.accountId)?.currency,t.toAmount,t.toAccountId?findAccount(t.toAccountId)?.currency:'',t.exchange?.date,t.exchange?.source,t.broker,t.other??t.fees,t.tax,t.brokerRef,t.corrects]);
     }
     download(A.csv(rows),'BRVM-journal-prive.csv','text/csv;charset=utf-8');
   }
@@ -796,6 +797,7 @@
           const info=['Date '+showDate(t.date),'Référence '+t.brokerRef,t.note,t.source,t.override,t.corrects?'Rectifie '+t.corrects:'',t.reinvests?'Dividende d’origine '+(db.transactions.find(x=>x.id===t.reinvests)?.brokerRef||''):''].filter(Boolean);
           const rows=['qty','price','actualTotal','broker','other','tax','gross','fees','ratioFrom','ratioTo'].filter(k=>typeof t[k]==='number').map(k=>[
             {qty:'Quantité',price:'Prix',actualTotal:'Montant sur avis',broker:'Courtage',other:'Autres frais',tax:'Taxes',gross:'Brut',fees:'Frais historiques',ratioFrom:'Ancien ratio',ratioTo:'Nouveau ratio'}[k],fmt.format(t[k])]);
+          if(t.type==='FEE'&&t.feeCategory) rows.unshift(['Catégorie',esc(feeCategories[t.feeCategory]||'Frais non spécifié')]);
           modal(labels[t.type],info.map(v=>'<p>'+esc(v)+'</p>').join('')+table(['Détail','Valeur'],rows));break;
         }
         case 'attachment': {
