@@ -67,7 +67,7 @@ def iso_date(text):
             return datetime(int(match[3]), int(match[2]), int(match[1])).date().isoformat()
         except ValueError:
             return None
-    match = re.search(r"\\b(\\d{1,2})\\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\\s+(\\d{4})", text.lower())
+    match = re.search(r"\b(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})", text.lower())
     if match:
         month = {"janvier":1,"février":2,"mars":3,"avril":4,"mai":5,"juin":6,
                  "juillet":7,"août":8,"septembre":9,"octobre":10,"novembre":11,"décembre":12}[match[2]]
