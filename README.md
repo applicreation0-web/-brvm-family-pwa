@@ -3,6 +3,12 @@
 PWA indépendante, hébergée directement sur GitHub Pages. Aucun hébergement Vercel ou constructeur d'applications n'est nécessaire.
 
 
+## Veille documentaire autonome — sources officielles publiques
+- Un workflow GitHub Actions `.github/workflows/public-watch.yml` vérifie les pages publiques BRVM en semaine, copie uniquement les intitulés brefs et liens des communiqués, avis de dividendes et fractionnements, puis actualise `market/public-watch.json` dans le dépôt.
+- La PWA récupère uniquement ce fichier public sur son propre domaine, sans envoyer d'informations sur les comptes ou le portefeuille. Une source indisponible ou un document non vérifiable n'est jamais traité comme une information certifiée.
+- **La veille documentaire ne remplace ni les cotations autorisées, ni l'analyse complète des états financiers** : le barème CORE repose toujours sur les dossiers de sélection justifiés et disponibles localement. Le flux de prix commercial demeure désactivé.
+- Le workflow n'édite jamais de portefeuille et ne transmet aucune donnée financière privée.
+
 ## Qualification CORE automatisée — évolution en cours de recette
 Le module `review.js` évalue automatiquement les sept valeurs CORE et les autres actions explicitement documentées dans le catalogue local `instruments`. **Un cours seul ne suffit pas à attribuer une note.** La veille planifiée recherche indépendamment des faits publics et des candidats hors CORE ; elle n'est pas encore synchronisée automatiquement avec le navigateur.
 
