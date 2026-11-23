@@ -798,12 +798,6 @@
           break;
         case 'quote-import': $('#quote-import').click(); break;
         case 'manual-quote': manualQuote(); break;
-        case 'core-review': {
-          if(!f.has('confirmed')) throw Error('Confirmez que vous avez examiné les informations disponibles.');
-          next=R.acknowledge(db,id);
-          message='Lecture de la revue CORE consignée. Nouveau contrôle dans six mois ; les cibles et les titres sont inchangés.';
-          break;
-        }
         case 'ack-core-review': {
           const p=getPortfolio();
           if(!p || p.id!==id) throw Error('Portefeuille introuvable.');
@@ -958,6 +952,12 @@
     let next, message='Enregistré sur cet appareil.', replace=false, page;
     try {
       switch(type) {
+        case 'core-review': {
+          if(!f.has('confirmed')) throw Error('Confirmez que vous avez examiné les informations disponibles.');
+          next=R.acknowledge(db,id);
+          message='Lecture de la revue CORE consignée. Nouveau contrôle dans six mois ; les cibles et les titres sont inchangés.';
+          break;
+        }
         case 'apply-core-targets': {
           if(!f.has('confirmed')) throw Error('Confirmez les nouvelles cibles.');
           next=structuredClone(db);
