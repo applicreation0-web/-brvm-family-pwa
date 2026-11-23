@@ -102,3 +102,16 @@ test('SEL05 : recherche sur toute la cote connue, recommandation non transaction
   assert.equal(JSON.stringify(d),before);
   assert.equal(d.transactions.length,0);
 });
+
+test('SEL07 : annonces des filiales nationales différenciées sans confusion de titres',()=>{
+  assert.equal(R.matchCoreIssuer('TOTALENERGIES MARKETING COTE D’IVOIRE'),'TOCI');
+  assert.equal(R.matchCoreIssuer('TOTALENERGIES MARKETING CI'),'TOCI');
+  assert.equal(R.matchCoreIssuer('TOTALENERGIES MARKETING SENEGAL'),null);
+  assert.equal(R.matchCoreIssuer('ORANGE COTE D’IVOIRE'),'ORAC');
+  assert.equal(R.matchCoreIssuer('ORANGE SENEGAL'),null);
+  assert.equal(R.matchCoreIssuer('NESTLE CI'),'NTLC');
+  assert.equal(R.matchCoreIssuer('SONATEL SENEGAL'),'SNTS');
+  assert.equal(R.matchCoreIssuer('SMB CI'),'SMBC');
+  assert.equal(R.matchCoreIssuer('PALM CI'),'PALC');
+  assert.equal(R.matchCoreIssuer('SOCIETE GENERALE COTE D’IVOIRE'),null);
+});
