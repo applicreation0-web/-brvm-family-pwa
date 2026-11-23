@@ -203,6 +203,22 @@ def check(first, second):
         expect(page.locator('.rail')).to_be_visible()
         page.locator('#nav [data-page=settings]').click()
         page.set_viewport_size({'width':1366,'height':900})
+        # Lisibilité des analyses : aucune table sur huit colonnes avec valeurs inconnues répétées.
+        expect(page.locator('.issuer-audit')).to_be_visible()
+        assert page.locator('.issuer-audit table').count()==0
+        assert page.locator('.issuer-audit').get_attribute('open') is None
+        page.locator('.issuer-audit summary').first.click()
+        expect(page.locator('.issuer-pending')).to_be_visible()
+        assert page.locator('.issuer-audit').inner_text().count('Indisponible')==0
+        page.locator('.issuer-pending summary').first.click()
+        expect(page.locator('.issuer-pending-item').first).to_be_visible()
+        page.set_viewport_size({'width':360,'height':800})
+        assert page.evaluate('document.documentElement.scrollWidth === document.documentElement.clientWidth')
+        shots=ROOT / 'test_artifacts'
+        shots.mkdir(exist_ok=True)
+        page.screenshot(path=str(shots / 'emetteurs_mobiles_fictifs_360px.png'), full_page=True)
+        page.set_viewport_size({'width':1366,'height':900})
+        page.locator('.issuer-audit summary').first.click()
         # Les objectifs privés anciens ne changent pas silencieusement : restauration explicite et vérifiée.
         targets=page.locator('form[data-form=targets]')
         for sym,value in [('SNTS','25'),('ORAC','15'),('CIEC','10'),('TOCI','15'),
