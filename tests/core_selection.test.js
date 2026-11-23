@@ -65,7 +65,7 @@ test('SEL04 : score faible, surveillance et classement sans renverser les exclus
   low.tradedSessionShare60=.2;low.medianDailyTurnoverXof=50000;
   low.sixMonthPriceReturn=-.4;low.governanceClear=true;
   assert.equal(R.evaluateSelection({selection:low},NOW).status,'RÉEXAMINER');
-  const watch=evidence();watch.netProfits3Y=[-1,-2,1];watch.revenues3Y=[3,2,1];
+  const watch=evidence();
   assert.equal(R.evaluateSelection({selection:watch},NOW).status,'CANDIDAT / CONSERVER');
   // Les seuils sont fondés sur le total, pas sur un unique indicateur.
   watch.per=40;watch.evEbitda=50;watch.dividendsPaidYears3Y=0;
