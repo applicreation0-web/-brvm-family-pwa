@@ -1,6 +1,8 @@
 """Create privacy-safe, reproducible Android/PWA icon PNGs from the authored vector."""
 from pathlib import Path
+from io import BytesIO
 from cairosvg import svg2png
+from PIL import Image
 
 ROOT=Path(__file__).resolve().parents[1]
 SOURCE=ROOT / 'icons' / 'icon.svg'
@@ -11,7 +13,10 @@ def build():
         raise SystemExit('Icon source contains external or executable references.')
     for size in (192,512):
         output=ROOT/'icons'/f'icon-{size}.png'
-        svg2png(bytestring=data,write_to=str(output),output_width=size,output_height=size)
+        rendered=svg2png(bytestring=data,output_width=size,output_height=size)
+        # Strip all ancillary PNG chunks; the privacy auditor only permits IHDR/IDAT/IEND.
+        with Image.open(BytesIO(rendered)) as img:
+            img.convert('RGBA').save(output,format='PNG',optimize=True)
         if output.stat().st_size<500:
             raise SystemExit('Rendered icon looks empty.')
     print('Icons regenerated reproducibly: 192, 512 px.')
