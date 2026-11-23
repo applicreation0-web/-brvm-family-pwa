@@ -15,7 +15,7 @@ ALLOWED = re.compile(
     r'(?:\.(?:gitignore|nojekyll)|\.github/workflows/(?:ci|pages|android)\.yml|'
     r'(?:README|CHANGELOG|PRIVACY_DEPLOYMENT_WARNING)\.md|DEPLOIEMENT\.txt|'
     r'(?:index\.html|style\.css|manifest\.webmanifest|package\.json)|'
-    r'(?:app|sw|finance|engine|analysis|quotes|vault)\.js|'
+    r'(?:app|sw|finance|engine|analysis|quotes|vault|review)\.js|'
     r'icons/icon-(?:192|512)\.png|icons/icon\.svg|market/feed\.json|'
     r'scripts/(?:build|build_android|build_icons|privacy_check|prepare_feed)\.py|'
     r'tests/(?:[a-z_0-9]+\.test\.js|[a-z_0-9]+\.py|account-merge\.test\.js)|'
@@ -91,10 +91,10 @@ def check(name, data, terms=(), current=False):
             raise ValueError('Données structurées personnelles possibles.')
     if name == 'market/feed.json' and json.loads(text) != {'enabled': False}:
         raise ValueError('Un flux doit rester désactivé dans l’archive générique.')
-    if current and name in {'app.js','vault.js','engine.js','finance.js','analysis.js','quotes.js','sw.js'}:
+    if current and name in {'app.js','vault.js','engine.js','finance.js','analysis.js','quotes.js','review.js','sw.js'}:
         if BODY_TRANSPORT.search(text):
             raise ValueError('Nouveau canal réseau à revoir.')
-        if name in {'app.js','vault.js','engine.js','finance.js','analysis.js'} and re.search(r'\bfetch\s*\(',text):
+        if name in {'app.js','vault.js','engine.js','finance.js','analysis.js','review.js'} and re.search(r'\bfetch\s*\(',text):
             raise ValueError('Un module de données contient un envoi réseau à revoir.')
 
 
