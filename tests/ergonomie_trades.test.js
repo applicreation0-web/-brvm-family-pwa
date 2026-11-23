@@ -86,3 +86,36 @@ test('ERG05 : dividende net enregistré une fois, titres inchangés',()=>{
   assert.equal(account(paid).dividends,1060);
   assert.equal(account(paid).grossDividends,1200);
 });
+
+
+test('ERG06 : versement ponctuel, retrait, frais de compte indépendants et aucun double débit',()=>{
+  const d=fixture(); const original=structuredClone(d);
+  const deposit=F.record(d,{type:'DEPOSIT',accountId:'account',date:F.today(),brokerRef:'DEP-ERG06',amount:20000});
+  const withdraw=F.record(deposit,{type:'WITHDRAW',accountId:'account',date:F.today(),brokerRef:'RET-ERG06',amount:3000});
+  const fee=F.record(withdraw,{type:'FEE',accountId:'account',date:F.today(),brokerRef:'FEE-ERG06',amount:450,
+    feeCategory:'virement',note:'Frais effectivement débités et non déjà inclus dans le versement'});
+  assert.deepEqual(d,original);
+  assert.equal(account(fee).cash,10000+20000-3000-450);
+  assert.equal(account(fee).feesPaid,450);
+  assert.equal(account(fee).netContribution,17000);
+  assert.equal(account(fee).positions.SNTS.qty,10);
+  assert.equal(fee.transactions.length,3);
+  assert.throws(()=>F.record(fee,{type:'WITHDRAW',accountId:'account',date:F.today(),
+    brokerRef:'RET-TOO-MUCH',amount:1000000}),/Cash|espèces|insuffis/i);
+});
+test('ERG07 : courtage, autres frais et taxes réels sont conciliés exactement avec avis',()=>{
+  const d=fixture();
+  const buy=F.record(d,{type:'BUY',accountId:'account',date:F.today(),brokerRef:'BUY-ERG07',
+    symbol:'SNTS',qty:2,price:300,broker:6,other:5,tax:3,actualTotal:614});
+  assert.equal(account(buy).cash,10000-614);
+  assert.equal(account(buy).positions.SNTS.cost,2000+614);
+  assert.equal(account(buy).feesPaid,11);
+  assert.equal(account(buy).taxes,3);
+  assert.throws(()=>F.record(d,{type:'BUY',accountId:'account',date:F.today(),brokerRef:'BUY-NET-ERR',
+    symbol:'SNTS',qty:2,price:300,broker:6,other:5,tax:3,actualTotal:613}),/justificatif/i);
+  const sold=F.record(buy,{type:'SELL',accountId:'account',date:F.today(),brokerRef:'SELL-ERG07',
+    symbol:'SNTS',qty:1,price:350,broker:3,other:2,tax:1,actualTotal:344});
+  assert.equal(account(sold).cash,10000-614+344);
+  assert.equal(account(sold).feesPaid,16);
+  assert.equal(account(sold).taxes,4);
+});
