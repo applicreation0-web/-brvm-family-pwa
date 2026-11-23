@@ -228,6 +228,7 @@
     if(['BUY','SELL','DIVIDEND','SPLIT','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY'].includes(t.type))
       fail(symbol(t.symbol), 'Titre invalide.');
     if(['DEPOSIT','WITHDRAW','FEE','TRANSFER'].includes(t.type)) fail(cent(t.amount)>0,'Montant positif obligatoire.');
+    if(t.type==='FEE' && t.feeCategory!==undefined) fail(['tenue','virement','taxe','autre'].includes(t.feeCategory),'Catégorie de frais inconnue.');
     if(['BUY','SELL','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY'].includes(t.type))
       fail(num(t.qty,.000001) && (isFund(d,t.symbol) || Number.isSafeInteger(t.qty)), 'Quantité invalide pour cet instrument.');
     if(['BUY','SELL'].includes(t.type)) {
