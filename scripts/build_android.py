@@ -8,6 +8,7 @@ from pathlib import Path
 from shutil import copy2, rmtree
 
 from build import root, shell
+from build_icons import build as build_icons
 
 ASSETS = root / 'android/app/src/main/assets/web'
 ICON = root / 'android/app/src/main/res/drawable-nodpi/ic_launcher.png'
@@ -35,6 +36,7 @@ NATIVE_DOWNLOAD = """    if(window.BRVMAndroid && typeof window.BRVMAndroid.begi
 """
 
 def build():
+    build_icons()
     if ASSETS.exists():
         rmtree(ASSETS)
     for name in shell:
