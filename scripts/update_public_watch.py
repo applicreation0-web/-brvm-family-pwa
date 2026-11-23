@@ -12,6 +12,10 @@ PAGES = {
     "communique": "https://www.brvm.org/fr/emetteurs/type-annonces/communiques",
     "dividende": "https://www.brvm.org/fr/esv/paiement-de-dividendes",
     "fractionnement": "https://www.brvm.org/fr/esv/fractionnement",
+    "financiers": "https://www.brvm.org/fr/type-document/etats-financiers",
+    "annuel": "https://www.brvm.org/fr/type-document/rapports-annuels",
+    "semestriel": "https://www.brvm.org/fr/type-document/rapports-semestriels",
+    "trimestriel": "https://www.brvm.org/fr/type-document/rapports-trimestriels",
 }
 MONTHS = {"janvier":1,"fevrier":2,"mars":3,"avril":4,"mai":5,"juin":6,
           "juillet":7,"aout":8,"septembre":9,"octobre":10,"novembre":11,"decembre":12}
@@ -50,6 +54,37 @@ class Rows(HTMLParser):
             self.cell = None
 
 
+class Listing(HTMLParser):
+    """Read document link titles from official listing headings only."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.inside_heading = False
+        self.current = None
+        self.entries = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag in ("h2", "h3"):
+            self.inside_heading = True
+        elif tag == "a" and self.inside_heading:
+            href = dict(attrs).get("href")
+            if href:
+                self.current = {"href": href, "title": ""}
+
+    def handle_data(self, data):
+        if self.current is not None:
+            self.current["title"] += data
+
+    def handle_endtag(self, tag):
+        if tag == "a" and self.current is not None:
+            self.current["title"] = " ".join(self.current["title"].split())[:140]
+            if self.current["title"]:
+                self.entries.append(self.current)
+            self.current = None
+        if tag in ("h2", "h3"):
+            self.inside_heading = False
+            self.current = None
+
+
 def safe_link(href, page):
     url = urljoin(page, href)
     parts = urlsplit(url)
@@ -79,6 +114,21 @@ def iso_date(text):
 
 
 def records(kind, page, html):
+    if kind in ("financiers", "annuel", "semestriel", "trimestriel"):
+        listing = Listing()
+        listing.feed(html)
+        found = []
+        for entry in listing.entries:
+            link = safe_link(entry["href"], page)
+            title = entry["title"]
+            if not link or ":" not in title:
+                continue
+            issuer = title.split(":", 1)[0].strip()[:80]
+            if not issuer:
+                continue
+            found.append({"type":kind, "issuer":issuer, "title":title, "url":link,
+                          "publishedOn":None, "eventOn":None, "sourcePage":page})
+        return list({item["url"]:item for item in found}.values())[:15]
     parsed = Rows()
     parsed.feed(html)
     items = []
@@ -128,7 +178,7 @@ def produce(fetch=None, today=None):
         items.extend(parsed)
     items.sort(key=lambda v: (v["publishedOn"] or v["eventOn"] or "", v["type"], v["issuer"]), reverse=True)
     return {"schema":"brvm-public-watch-v1", "checkedOn":checked,
-            "sources":succeeded, "items":items[:75]}
+            "sources":succeeded, "items":items[:120]}
 
 
 def main():

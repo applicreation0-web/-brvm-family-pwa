@@ -39,12 +39,20 @@
     return {change:last.price/adjusted-1,from:first.date,to:last.date,
       splitAdjusted:splitDates.size>0,dividendsIncluded:false};
   }
+  // Calendar anchored to the release date, not to when a user clicks acknowledgement.
+  function nextCoreReview(lastReviewed=null) {
+    let next=addMonths(START,CYCLE);
+    for(let period=2;lastReviewed&&next<=lastReviewed&&period<=240;period++)
+      next=addMonths(START,period*CYCLE);
+    return next;
+  }
   function assess(d,portfolioId,now=F.today()) {
     if(!F.date(now)) throw Error('Date de revue invalide.');
     const calc=F.calculate(d),p=calc.portfolios.find(x=>x.id===portfolioId);
     if(!p) throw Error('Portefeuille introuvable.');
     const lastReviewed=d.settings.coreReviews?.[portfolioId]?.reviewedOn||null;
-    const anchor=lastReviewed||START, next=addMonths(anchor,CYCLE), due=now>=next;
+    const anchor=lastReviewed||START;
+    const next=nextCoreReview(lastReviewed), due=now>=next;
     const values=Object.fromEntries(E.symbols.map(sym=>[sym,p.accounts.reduce((n,a)=>
       n+(a.positions[sym]?.market||0)*(a.rate?.xof||0),0)]));
     const base=Object.values(values).reduce((n,v)=>n+v,0);
@@ -99,9 +107,21 @@
   });
   const SOURCE_KEYS=['screening','financial','valuation','dividends','liquidity','prices','governance'];
   const SOURCE_FRESH_MONTHS={screening:12,financial:18,valuation:1,dividends:18,liquidity:1,prices:1,governance:3};
-  function evaluateSelection(instrument,now=F.today()) {
+  const EXCLUDED_INSTRUMENTS=new Set([
+    'SGBC','CBIB','ECOC','SIBC','ETIT','BICB','BOAB','BOAC','BOAF','BOAM','BOAN','BOAS','STBC'
+  ]);
+  function forbiddenBusiness(instrument,symbol='') {
+    if(EXCLUDED_INSTRUMENTS.has(symbol)) return true;
+    const name=typeof instrument?.label==='string'?instrument.label.toUpperCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,''):'';
+    return /\b(BANQUE|BANK OF AFRICA|ECOBANK|ASSURANCE|TABAC|CIGARETTE|LOTERIE|CASINO|BRASSERIE)\b/.test(name);
+  }
+  function evaluateSelection(instrument,now=F.today(),symbol='') {
     const e=instrument?.selection;
     const missing=[], blocked=[];
+    if(forbiddenBusiness(instrument,symbol))
+      return {status:'EXCLU / À RÉEXAMINER',score:null,missing:[],
+        blocked:['Secteur ou émetteur exclu par la politique CORE'],parts:null,candidateReady:false};
     const valid=n=>typeof n==='number'&&Number.isFinite(n);
     const ratio=n=>valid(n)&&n>=0&&n<=1;
     const url=s=>typeof s==='string'&&/^https:\/\/[^\s/?#]+(?:[^\s]*)$/.test(s)&&s.length<=500;
@@ -176,11 +196,26 @@
     const status=candidateReady?'CANDIDAT / CONSERVER':score>=55?'SURVEILLER':'RÉEXAMINER';
     return {status,score,candidateReady,missing:[],blocked:[],parts,asOf:now};
   }
+  // Safe issuer matching: different West-African subsidiaries must never be conflated.
+  function matchCoreIssuer(name) {
+    if(typeof name!=='string') return null;
+    const issuer=name.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^A-Z0-9]+/g,' ').trim().replace(/\s+/g,' ');
+    if(/^(SONATEL|SONATEL SENEGAL|SONATEL SN)$/.test(issuer)) return 'SNTS';
+    if(/^ORANGE (COTE D IVOIRE|CI)$/.test(issuer)) return 'ORAC';
+    if(/^(CIE|CIE CI|CIE COTE D IVOIRE|COMPAGNIE IVOIRIENNE D ELECTRICITE)$/.test(issuer)) return 'CIEC';
+    if(/^TOTALENERGIES (MARKETING )?(CI|COTE D IVOIRE)$/.test(issuer)) return 'TOCI';
+    if(/^SMB( CI| COTE D IVOIRE)?$/.test(issuer)) return 'SMBC';
+    if(/^NESTLE( CI| COTE D IVOIRE)?$/.test(issuer)) return 'NTLC';
+    if(/^PALM( CI| COTE D IVOIRE)?$/.test(issuer)) return 'PALC';
+    return null;
+  }
+
   function selectUniverse(d,now=F.today()) {
     const codes=[...new Set([...E.symbols,...Object.entries(d.instruments||{})
       .filter(([,i])=>i?.kind==='ACTION').map(([s])=>s)])].sort();
     const rows=codes.map(symbol=>({symbol,core:E.symbols.includes(symbol),
-      ...evaluateSelection(d.instruments?.[symbol],now)}));
+      ...evaluateSelection(d.instruments?.[symbol],now,symbol)}));
     const core=rows.filter(x=>x.core),alternatives=rows.filter(x=>!x.core)
       .filter(x=>x.candidateReady===true&&x.score>=SELECTION_GATES.minCandidateScore)
       .sort((a,b)=>b.score-a.score||a.symbol.localeCompare(b.symbol));
@@ -194,5 +229,5 @@
     return {core,alternatives,replacements,unscored:rows.filter(x=>x.score===null).length,
       disclaimer:'Présélection automatisée sur données documentées, sans ordre ni modification CORE.'};
   }
-  return {START,CYCLE,TOLERANCE,HISTORY_LIMIT,SELECTION_WEIGHTS,SELECTION_GATES,addMonths,historyPoint,sixMonthReturn,assess,acknowledge,evaluateSelection,selectUniverse};
+  return {START,CYCLE,TOLERANCE,HISTORY_LIMIT,SELECTION_WEIGHTS,SELECTION_GATES,addMonths,nextCoreReview,historyPoint,sixMonthReturn,assess,acknowledge,evaluateSelection,selectUniverse,matchCoreIssuer,forbiddenBusiness};
 });

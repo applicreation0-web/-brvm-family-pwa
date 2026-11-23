@@ -28,6 +28,15 @@ test('WATCH02 : refus d’un hôte imitant BRVM',async()=>{
   const d=payload();d.items[0].url='https://www.brvm.org.evil.example/doc.pdf';
   await assert.rejects(Q.publicWatch(fetcher(d)),/non vérifié/);
 });
+test('WATCH04 : rapports financiers publics consultables mais sans chiffres prétendus',async()=>{
+  const d=payload();d.sources.push('https://www.brvm.org/fr/type-document/etats-financiers');
+  d.items.push({type:'financiers',issuer:'SONATEL SENEGAL',title:'SONATEL SENEGAL : Etats financiers 2025',
+    url:'https://www.brvm.org/fr/sonatel-etats-financiers-2025',publishedOn:null,eventOn:null,
+    sourcePage:'https://www.brvm.org/fr/type-document/etats-financiers'});
+  const r=await Q.publicWatch(fetcher(d));
+  assert.equal(r.items.length,2);
+  assert.equal(r.items[1].publishedOn,null);
+});
 test('WATCH03 : refus des documents futurs et des champs inconnus',async()=>{
   const d=payload();d.items[0].publishedOn='2099-01-01';
   await assert.rejects(Q.publicWatch(fetcher(d)),/non vérifié/);

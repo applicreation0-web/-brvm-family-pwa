@@ -102,3 +102,31 @@ test('SEL05 : recherche sur toute la cote connue, recommandation non transaction
   assert.equal(JSON.stringify(d),before);
   assert.equal(d.transactions.length,0);
 });
+
+test('SEL07 : annonces des filiales nationales différenciées sans confusion de titres',()=>{
+  assert.equal(R.matchCoreIssuer('TOTALENERGIES MARKETING COTE D’IVOIRE'),'TOCI');
+  assert.equal(R.matchCoreIssuer('TOTALENERGIES MARKETING CI'),'TOCI');
+  assert.equal(R.matchCoreIssuer('TOTALENERGIES MARKETING SENEGAL'),null);
+  assert.equal(R.matchCoreIssuer('ORANGE COTE D’IVOIRE'),'ORAC');
+  assert.equal(R.matchCoreIssuer('ORANGE SENEGAL'),null);
+  assert.equal(R.matchCoreIssuer('NESTLE CI'),'NTLC');
+  assert.equal(R.matchCoreIssuer('SONATEL SENEGAL'),'SNTS');
+  assert.equal(R.matchCoreIssuer('SMB CI'),'SMBC');
+  assert.equal(R.matchCoreIssuer('PALM CI'),'PALC');
+  assert.equal(R.matchCoreIssuer('SOCIETE GENERALE COTE D’IVOIRE'),null);
+});
+
+test('SEL08 : un ticker bancaire ou tabac demeure exclu même avec fiche faussement favorable',()=>{
+  const d=F.empty();
+  for(const symbol of ['SGBC','ECOC','SIBC','CBIB','STBC']) {
+    d.instruments[symbol]={kind:'ACTION',label:'Emetteur test',selection:evidence()};
+  }
+  const scan=R.selectUniverse(d,NOW);
+  assert.equal(scan.alternatives.length,0);
+  for(const symbol of ['SGBC','ECOC','SIBC','CBIB','STBC']) {
+    const row=scan.core.concat(scan.alternatives).find(x=>x.symbol===symbol);
+    assert.equal(R.evaluateSelection(d.instruments[symbol],NOW,symbol).score,null);
+    assert.equal(R.evaluateSelection(d.instruments[symbol],NOW,symbol).status,'EXCLU / À RÉEXAMINER');
+  }
+  assert.equal(R.forbiddenBusiness({label:'BANQUE COMMERCIALE FICTIVE'}),true);
+});

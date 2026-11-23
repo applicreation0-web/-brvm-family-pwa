@@ -93,9 +93,9 @@ def check(name, data, terms=(), current=False):
         raise ValueError('Un flux doit rester désactivé dans l’archive générique.')
     if name == 'market/public-watch.json':
         data = json.loads(text)
-        if data.get('schema') != 'brvm-public-watch-v1' or not isinstance(data.get('items'), list) or len(data['items'])>75 or not isinstance(data.get('sources'), list) or len(data['sources'])>4:
+        if data.get('schema') != 'brvm-public-watch-v1' or not isinstance(data.get('items'), list) or len(data['items'])>120 or not isinstance(data.get('sources'), list) or len(data['sources'])>8:
             raise ValueError('Catalogue documentaire public mal formé.')
-        if any(not isinstance(x,dict) or not x.get('url','').startswith('https://www.brvm.org/') or x.get('type') not in ('communique','dividende','fractionnement') or set(x) != {'type','issuer','title','url','publishedOn','eventOn','sourcePage'} for x in data['items']):
+        if any(not isinstance(x,dict) or not x.get('url','').startswith('https://www.brvm.org/') or x.get('type') not in ('communique','dividende','fractionnement','financiers','annuel','semestriel','trimestriel') or set(x) != {'type','issuer','title','url','publishedOn','eventOn','sourcePage'} for x in data['items']):
             raise ValueError('Catalogue documentaire avec source non autorisée.')
     if current and name in {'app.js','vault.js','engine.js','finance.js','analysis.js','quotes.js','review.js','sw.js'}:
         if BODY_TRANSPORT.search(text):
