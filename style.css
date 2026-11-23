@@ -313,3 +313,22 @@ dialog header {position:sticky;top:0;z-index:1;display:flex;justify-content:spac
 @media(max-width:360px) {
   .issuer-metrics {grid-template-columns:1fr}
 }
+
+/* V3.5 — review semiannuelle, lisible sur Android sans tableau horizontal */
+.core-watch {border-color:#446256}
+.core-watch-due {border-color:#9f7c45;background:#23251f}
+.core-watch > details > summary {font-weight:750;font-size:14px;line-height:1.4;padding:9px 2px;list-style-position:inside}
+.core-watch > details[open] > summary {border-bottom:1px solid var(--line);margin-bottom:12px}
+.watch-list {list-style:none;margin:0 0 14px;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:10px}
+.watch-issuer {min-width:0;border:1px solid #485166;background:#1c2530;border-radius:10px;padding:12px}
+.watch-issuer p {font-size:12px;line-height:1.45;margin:6px 0 0;overflow-wrap:break-word}
+.watch-heading {display:flex;justify-content:space-between;align-items:start;gap:8px;font-size:13px}
+.watch-heading span {text-align:right;color:#d1daea;font-size:12px}
+.watch-warnings {color:#f9d397;font-weight:650}
+.core-watch button.primary {margin-top:9px;width:auto}
+@media(max-width:690px) {
+ .core-watch .watch-list {grid-template-columns:1fr}
+ .core-watch .watch-heading {flex-direction:column;gap:2px}
+ .core-watch .watch-heading span {text-align:left}
+ .core-watch button.primary {width:100%}
+}
