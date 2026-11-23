@@ -1,6 +1,6 @@
 const PREFIX='brvm-family-shell:'+self.registration.scope+'|';
-const CACHE=PREFIX+'v3.4.0-mobile-issuer-cards-20261123';
-const SHELL=['index.html','style.css','engine.js','finance.js','vault.js','quotes.js','analysis.js','app.js',
+const CACHE=PREFIX+'v3.5.0-core-review-20261123';
+const SHELL=['index.html','style.css','engine.js','finance.js','vault.js','quotes.js','analysis.js','review.js','app.js',
   'manifest.webmanifest','icons/icon-192.png','icons/icon-512.png'];
 const urls=new Set(SHELL.map(p=>new URL(p,self.registration.scope).href));
 self.addEventListener('install',event=>event.waitUntil(caches.open(CACHE).then(c=>c.addAll([...urls].map(u=>new Request(u,{cache:'reload'}))))));

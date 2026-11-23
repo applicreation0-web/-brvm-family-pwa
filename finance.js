@@ -56,7 +56,7 @@
   const compareDate = (a,b) => a.date.localeCompare(b.date);
   const empty = () => ({
     schema, asOf: '', source: 'Saisie locale', owners: [], portfolios: [], institutions: [], accounts: [], positions: [],
-    quotes: {}, transactions: [], history: [], orders: [], plans: [], events: [], observations: [], attachments: [],
+    quotes: {}, quoteHistory: {}, transactions: [], history: [], orders: [], plans: [], events: [], observations: [], attachments: [],
     instruments: Object.fromEntries(Object.entries(defaults).map(([s,label]) => [s,{kind:'FCP',label,distribution:'unknown',screen:'À vérifier'}])),
     settings: { staleDays: 5 }
   });
@@ -163,6 +163,21 @@
     fail(d.quotes && typeof d.quotes === 'object' && !Array.isArray(d.quotes) && d.instruments && typeof d.instruments === 'object' &&
       (d.settings?.autoQuotes===undefined||typeof d.settings.autoQuotes==='boolean') && Number.isInteger(d.settings?.staleDays) && d.settings.staleDays>=1 && d.settings.staleDays<=365, 'Paramètres de marché invalides.');
     for (const [s,q] of Object.entries(d.quotes)) validateQuote(s,q,current);
+    if(d.quoteHistory!==undefined) {
+      fail(d.quoteHistory && typeof d.quoteHistory==='object' && !Array.isArray(d.quoteHistory),'Historique de cours mal formé.');
+      for(const [symbol,list] of Object.entries(d.quoteHistory)) {
+        fail(Array.isArray(list) && list.length<=400 && symbol && list.every((point,index)=>
+          (!index || list[index-1].date<point.date)),'Historique de cotations incohérent.');
+        for(const point of list) validateQuote(symbol,point,current);
+      }
+    }
+    if(d.settings?.coreReviews!==undefined) {
+      fail(d.settings.coreReviews && typeof d.settings.coreReviews==='object' && !Array.isArray(d.settings.coreReviews),
+        'Suivi CORE invalide.');
+      for(const [id,state] of Object.entries(d.settings.coreReviews)) fail(index.portfolios.has(id) &&
+        state && date(state.reviewedOn) && state.reviewedOn<=current && state.reviewedOn>='2026-11-23',
+        'Date ou portefeuille de revue CORE invalide.');
+    }
     for (const [s,i] of Object.entries(d.instruments))
       fail(symbol(s) && i && text(i.label) && ['FCP','ACTION','DROIT'].includes(i.kind) &&
         (!i.distribution || ['unknown','capitalizing','distributing'].includes(i.distribution)) &&
@@ -698,6 +713,16 @@
            Object.keys(quote).every(k=>JSON.stringify(quote[k])===JSON.stringify(previous[k])) &&
            (previousRetrieval||!retrievedOn)) continue;
       }
+      next.quoteHistory??={};
+      const history=next.quoteHistory[s]||[];
+      const archive=q=>({date:q.date,price:q.price,basis:q.basis,source:q.source,
+        ...(q.status?{status:q.status}:{}),...(q.adjustedThrough?{adjustedThrough:q.adjustedThrough}:{})});
+      for(const point of [old,q].filter(Boolean)) {
+        const idx=history.findIndex(x=>x.date===point.date);
+        if(idx>=0) history[idx]=archive(point); else history.push(archive(point));
+      }
+      history.sort((a,b)=>a.date.localeCompare(b.date));
+      next.quoteHistory[s]=history.slice(-400);
       next.quotes[s]=copy(q); count++;
     }
     if(count) {

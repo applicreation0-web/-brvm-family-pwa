@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  const F=window.BRVM, E=window.BRVMEngine, V=window.BRVMVault, Q=window.BRVMQuotes, A=window.BRVMAnalysis;
+  const F=window.BRVM, E=window.BRVMEngine, V=window.BRVMVault, Q=window.BRVMQuotes, A=window.BRVMAnalysis, R=window.BRVMReview;
   const $=s=>document.querySelector(s);
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const attr=esc;
@@ -229,6 +229,37 @@
       ${btn('dividend-received','Dividende')}${btn('corporate-action','Événements')}
       ${btn('monthly-backup','Sauvegarder')}</nav>`;
   }
+  function coreWatch(p) {
+    const review=R.assess(db,p.id);
+    const summary=review.due?'Revue semestrielle à examiner': 'Prochaine revue : '+showDate(review.dueOn);
+    const tracked=review.rows.map(x=>{
+      const main=x.quantity>0?'<strong>'+fc(x.market)+'</strong> · coût '+fc(x.cost):'<span class="quiet">Aucune position détenue</span>';
+      const six=x.change
+        ?'<span class="'+(x.change.change<0?'loss':'gain')+'">'+(x.change.change>=0?'+':'')+pct(x.change.change)+'</span> · '+showDate(x.change.from)+' → '+showDate(x.change.to)
+        :'<span class="quiet">Historique de cours comparable sur 6 mois insuffisant</span>';
+      const pnl=x.sincePurchase===null?'—':(x.sincePurchase>=0?'+':'')+pct(x.sincePurchase);
+      const gap=x.gap===null?'—':(x.gap>=0?'+':'')+pct(x.gap);
+      const warnings=x.warnings.length?'<p class="watch-warnings">'+esc(x.warnings.join(' · '))+'</p>':'';
+      return '<li class="watch-issuer"><div class="watch-heading"><strong>'+esc(x.symbol)+'</strong>'+
+        '<span>Poids '+pct(x.actual)+' / cible '+pct(x.target)+' · écart '+gap+'</span></div>'+
+        '<p>'+main+' · P/L depuis achats '+esc(pnl)+'</p>'+
+        '<p>Variation de cours sur 6 mois : '+six+'</p>'+
+        '<p class="quiet">Cours '+showDate(x.quoteDate)+' · résultats '+showDate(x.finDate)+' · filtrage '+esc(x.screening)+'</p>'+
+        warnings+'</li>';
+    }).join('');
+    return `<article class="pane core-watch ${review.due?'core-watch-due':''}">
+      <div class="pane-head"><h2>Veille des actions CORE</h2>
+        <p>${esc(summary)} · ${review.alerts} titre(s) à documenter ou surveiller</p></div>
+      <details ${review.due?'open':''}>
+        <summary>Suivi des 7 titres · cours, résultats, pondérations et signaux</summary>
+        <p class="quiet">Analyse automatique des données conservées sur cet appareil, sans accès aux autres données privées. Écart aux cibles : alerte au-delà de ±2 points. Les cours anciens, les publications manquantes et les fractionnements non documentés limitent la fiabilité des comparaisons.</p>
+        <ul class="watch-list">${tracked}</ul>
+        <p class="quiet">La variation sur six mois est celle du cours uniquement, hors dividendes, à partir de deux dates comparables disponibles. Le P/L depuis achats utilise le coût de revient enregistré, frais compris : ce n’est pas une performance semestrielle.</p>
+        <p class="quiet">La revue peut conduire à conserver, surveiller ou proposer de modifier CORE. Elle ne vend, n’achète ni ne change les cibles automatiquement. Les documents publics doivent être vérifiés avant décision.</p>
+        ${review.due?btn('ack-core-review','Consigner l’examen de la revue',p.id,'primary'):''}
+      </details>
+    </article>`;
+  }
   function dashboard() {
     if(!db.accounts.length) return welcome();
     const p=getPortfolio()||calc.portfolios[0], all=calc.all;
@@ -244,6 +275,7 @@
       ${kpi('Dividendes nets reçus',fc(p.dividends),`${fc(p.grossDividends)} bruts depuis l’ouverture`)}</div>
       ${targetNotice(p)}
       ${coreProgress(p)}
+      ${coreWatch(p)}
       ${points.length>1?pane('Évolution du patrimoine',curve(points),'Valeurs historiques validées et comparables'):''}
       <details class="dashboard-advanced"><summary>Voir le détail des comptes et des analyses</summary>
       <div class="split">${pane('Répartition par SGI',bars(calc.institutions.map(i=>({label:i.label,value:p.accounts.filter(a=>a.institutionId===i.id).reduce((n,a)=>n+(a.totalXof??0),0)}))))}</div>
@@ -766,6 +798,18 @@
           break;
         case 'quote-import': $('#quote-import').click(); break;
         case 'manual-quote': manualQuote(); break;
+        case 'ack-core-review': {
+          const p=getPortfolio();
+          if(!p || p.id!==id) throw Error('Portefeuille introuvable.');
+          const report=R.assess(db,p.id);
+          if(!report.due) throw Error('La prochaine revue n’est pas encore échue.');
+          modal('Consigner la revue semestrielle',form('core-review',
+            '<p>Ce contrôle indique les signaux et informations manquantes. Les états financiers doivent être vérifiés avant de décider de modifier CORE.</p>'+
+            '<p>Ce reçu confirme uniquement la lecture du bilan, sans modifier aucun cours, titre, frais, solde ou cible.</p>'+
+            '<label class="check"><input type="checkbox" name="confirmed" required> J’ai examiné la revue et les alertes disponibles.</label>',
+            'Consigner la lecture',p.id));
+          break;
+        }
         case 'apply-core-targets': {
           const p=getPortfolio();
           if(!p) throw Error('Sélectionnez un portefeuille.');
@@ -908,6 +952,12 @@
     let next, message='Enregistré sur cet appareil.', replace=false, page;
     try {
       switch(type) {
+        case 'core-review': {
+          if(!f.has('confirmed')) throw Error('Confirmez que vous avez examiné les informations disponibles.');
+          next=R.acknowledge(db,id);
+          message='Lecture de la revue CORE consignée. Nouveau contrôle dans six mois ; les cibles et les titres sont inchangés.';
+          break;
+        }
         case 'apply-core-targets': {
           if(!f.has('confirmed')) throw Error('Confirmez les nouvelles cibles.');
           next=structuredClone(db);
