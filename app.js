@@ -24,6 +24,7 @@
   const feeCategories={tenue:'Tenue de compte / garde',virement:'Virement / transfert',taxe:'Taxe distincte',autre:'Autres frais prélevés'};
   const pages={dashboard:['Vue d’ensemble','▦'],accounts:['Comptes et positions','▤'],invest:['Opérations','⇄'],
     events:['Dividendes et FCP','◈'],history:['Historique et analyses','◷'],settings:['Cibles et risques','⚙'],data:['Données et sauvegarde','⬡']};
+  let publicWatch={status:'chargement',checkedOn:null,items:[]};
   let store, record, db, calc, tab='dashboard', portfolioId='', busy=false, refreshing=false, plan=null, comparison=null, planInputs=null, importPreview=null;
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
@@ -258,6 +259,19 @@
       (candidateRows?'<ul class="watch-list">'+candidateRows+'</ul>':'')+
       (suggested?'<p>Propositions à examiner :</p><ul>'+suggested+'</ul>':'')+
       '</details>';
+    const officialRows=publicWatch.items.slice(0,8).map(item=>
+      '<li class="watch-issuer"><strong>'+esc(item.issuer)+'</strong> · '+esc(item.title)+
+      (item.publishedOn?' · '+showDate(item.publishedOn):'')+
+      ' · <a target="_blank" rel="noopener noreferrer" href="'+attr(item.url)+'">Document BRVM</a></li>').join('');
+    const watchAge=publicWatch.checkedOn&&publicWatch.checkedOn<F.today().slice(0,7)+'-01';
+    const officialPanel='<details class="core-public-watch"><summary>Publications BRVM · veille documentaire</summary>'+
+      '<p class="quiet">'+(publicWatch.status==='chargement'?'Vérification des annonces publiques…':
+      publicWatch.status==='erreur'?'Flux documentaire indisponible : aucune publication inventée.':
+      publicWatch.checkedOn===null?'Première collecte documentaire non encore exécutée.':
+      'Dernier contrôle documentaire : '+showDate(publicWatch.checkedOn)+(watchAge?' (ancien)':''))+
+      '. Les communiqués et avis sont des liens officiels, pas des cours ni une validation de conformité charia.</p>'+
+      (officialRows?'<ul class="watch-list">'+officialRows+'</ul>':'')+
+      '</details>';
     const tracked=review.rows.map(x=>{
       const main=x.quantity>0?'<strong>'+fc(x.market)+'</strong> · coût '+fc(x.cost):'<span class="quiet">Aucune position détenue</span>';
       const six=x.change
@@ -285,6 +299,7 @@
         ${review.due?btn('ack-core-review','Consigner l’examen de la revue',p.id,'primary'):''}
       </details>
       ${selectionPanel}
+      ${officialPanel}
     </article>`;
   }
   function dashboard() {
@@ -1280,6 +1295,13 @@
     try {await offer.prompt();} catch {notify('Installation indisponible dans cette fenêtre.',true);}
   });
   function start() {
+    Q.publicWatch().then(feed=>{
+      publicWatch={...feed,status:'ok'};
+      if(db&&tab==='dashboard') render();
+    }).catch(()=>{
+      publicWatch={status:'erreur',checkedOn:null,items:[]};
+      if(db&&tab==='dashboard') render();
+    });
     if('serviceWorker' in navigator && isSecureContext)
       navigator.serviceWorker.register('./sw.js').then(registration=>{
         const announce=()=>{
