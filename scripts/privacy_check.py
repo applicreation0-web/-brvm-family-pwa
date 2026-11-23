@@ -12,12 +12,12 @@ import zipfile
 from build import shell
 
 ALLOWED = re.compile(
-    r'(?:\.(?:gitignore|nojekyll)|\.github/workflows/(?:ci|pages|android)\.yml|'
+    r'(?:\.(?:gitignore|nojekyll)|\.github/workflows/(?:ci|pages|android|public-watch)\.yml|'
     r'(?:README|CHANGELOG|PRIVACY_DEPLOYMENT_WARNING)\.md|DEPLOIEMENT\.txt|'
     r'(?:index\.html|style\.css|manifest\.webmanifest|package\.json)|'
     r'(?:app|sw|finance|engine|analysis|quotes|vault|review)\.js|'
-    r'icons/icon-(?:192|512)\.png|icons/icon\.svg|market/feed\.json|'
-    r'scripts/(?:build|build_android|build_icons|privacy_check|prepare_feed)\.py|'
+    r'icons/icon-(?:192|512)\.png|icons/icon\.svg|market/(?:feed|public-watch)\.json|'
+    r'scripts/(?:build|build_android|build_icons|privacy_check|prepare_feed|update_public_watch)\.py|'
     r'tests/(?:[a-z_0-9]+\.test\.js|[a-z_0-9]+\.py|account-merge\.test\.js)|'
     r'android/(?:settings|build)\.gradle|android/gradle\.properties|android/app/build\.gradle|'
     r'android/app/src/main/AndroidManifest\.xml|'
@@ -91,6 +91,12 @@ def check(name, data, terms=(), current=False):
             raise ValueError('Données structurées personnelles possibles.')
     if name == 'market/feed.json' and json.loads(text) != {'enabled': False}:
         raise ValueError('Un flux doit rester désactivé dans l’archive générique.')
+    if name == 'market/public-watch.json':
+        data = json.loads(text)
+        if data.get('schema') != 'brvm-public-watch-v1' or not isinstance(data.get('items'), list) or len(data['items'])>75 or not isinstance(data.get('sources'), list) or len(data['sources'])>4:
+            raise ValueError('Catalogue documentaire public mal formé.')
+        if any(not isinstance(x,dict) or not x.get('url','').startswith('https://www.brvm.org/') or x.get('type') not in ('communique','dividende','fractionnement') or set(x) != {'type','issuer','title','url','publishedOn','eventOn','sourcePage'} for x in data['items']):
+            raise ValueError('Catalogue documentaire avec source non autorisée.')
     if current and name in {'app.js','vault.js','engine.js','finance.js','analysis.js','quotes.js','review.js','sw.js'}:
         if BODY_TRANSPORT.search(text):
             raise ValueError('Nouveau canal réseau à revoir.')
