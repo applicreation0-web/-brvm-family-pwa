@@ -34,6 +34,8 @@ class TestPublicWatch(unittest.TestCase):
         self.assertNotIn("accounts", str(payload))
         self.assertNotIn("quotes", str(payload))
         self.assertIn("fractionnement", [x["type"] for x in payload["items"]])
+        self.assertEqual(next(x for x in payload["items"] if x["type"]=="fractionnement")["eventOn"], "2026-10-26")
+        self.assertEqual(next(x for x in payload["items"] if x["type"]=="dividende")["eventOn"], "2026-09-18")
 
     def test_fail_closed_missing_source(self):
         with self.assertRaises(RuntimeError):
