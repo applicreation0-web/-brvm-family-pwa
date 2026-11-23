@@ -26,6 +26,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Installer le moteur de génération des icônes
+        run: python -m pip install cairosvg==2.8.2
       - name: Vérification de confidentialité et tests financiers
         run: |
           python scripts/privacy_check.py
