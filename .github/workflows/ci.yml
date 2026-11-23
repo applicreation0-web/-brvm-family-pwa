@@ -12,6 +12,8 @@ jobs:
         with: {node-version: '24'}
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
+      - name: Dépendance de rendu de l’icône
+        run: python -m pip install cairosvg==2.8.2
       - name: Contrôle des fichiers, tests et build
         run: |
           python scripts/privacy_check.py
@@ -28,7 +30,8 @@ jobs:
         with: {python-version: '3.12'}
       - name: Tests Chromium fictifs
         run: |
-          python -m pip install playwright==1.62.0
+          python -m pip install playwright==1.62.0 cairosvg==2.8.2
+          python scripts/build_icons.py
           python -m playwright install --with-deps chromium
           python tests/browser_e2e.py
       - name: Capture écran fictive pour revue ergonomique
@@ -49,6 +52,8 @@ jobs:
         with: {persist-credentials: false, fetch-depth: 0}
       - uses: actions/setup-python@v5
         with: {python-version: '3.12'}
+      - name: Dépendance de rendu de l’icône
+        run: python -m pip install cairosvg==2.8.2
       - name: Construire et auditer le paquet distribué
         run: |
           python scripts/build.py dist

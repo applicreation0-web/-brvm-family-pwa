@@ -8,6 +8,9 @@ Une fois la publication GitHub Pages activée et les tests réussis :
 
 Sur Android, ouvrir l'adresse dans Chrome puis installer l'application depuis le menu du navigateur.
 
+## Icône Android et PWA V3.3.1
+Le pictogramme original bleu nuit, or et vert d’eau représente le patrimoine et sa progression. Le même dessin vectoriel génère les PNG 192 et 512 px pendant les compilations sécurisées (application web + Android) ; aucune image personnelle et aucune clé de signature dans le dépôt. Les nouveaux fichiers remplacent l'icône de lancement via une mise à jour signée avec l'ancienne clé privée.
+
 ## Ergonomie 3.3 — un seul espace Opérations
 - Le menu « Opérations » regroupe Versement ponctuel, Achat exécuté, Vente exécutée, Retrait et Dividende. L'ancien écran « Ordres achat / vente » est intégré dans une section repliable du même espace ; les projets CORE sont également repliables. Les accès rapides du tableau de bord ouvrent les mêmes formulaires, jamais un module comptable concurrent.
 - Versement : saisir le **montant réellement crédité** sur le compte SGI à réception de l'avis ; aucun financement fictif ni dépôt mensuel. Retrait : montant réellement débité. Transfert entre comptes : montants réels et conversion documentée.

@@ -11,6 +11,8 @@ shell = [
 ]
 
 if __name__ == '__main__':
+    from build_icons import build as build_icons
+    build_icons()
     target = Path(sys.argv[1]) if len(sys.argv) > 1 else root / 'dist'
     if target.exists() and any(target.iterdir()):
         raise SystemExit('Destination de build non vide.')
