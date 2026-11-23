@@ -87,5 +87,105 @@
     F.calculate(next);
     return next;
   }
-  return {START,CYCLE,TOLERANCE,HISTORY_LIMIT,addMonths,historyPoint,sixMonthReturn,assess,acknowledge};
+
+  // Sélection indépendante des comptes. Toutes les entrées sont des observations
+  // documentées, jamais des signaux d'ordre ou des promesses de performance.
+  const SELECTION_WEIGHTS=Object.freeze({
+    solidity:30, valuation:20, dividends:15, liquidity:15, trend:10, transparency:10
+  });
+  const SELECTION_GATES=Object.freeze({
+    interestDebtAssets:.33, interestAssets:.33, nonPermissibleRevenue:.05,
+    minCandidateScore:75, minScoreAdvantage:10
+  });
+  const SOURCE_KEYS=['screening','financial','valuation','dividends','liquidity','prices','governance'];
+  function evaluateSelection(instrument,now=F.today()) {
+    const e=instrument?.selection;
+    const missing=[], blocked=[];
+    const valid=n=>typeof n==='number'&&Number.isFinite(n);
+    const ratio=n=>valid(n)&&n>=0&&n<=1;
+    const url=s=>typeof s==='string'&&/^https:\/\/[^\s/?#]+(?:[^\s]*)$/.test(s)&&s.length<=500;
+    if(!e||typeof e!=='object')
+      return {status:'NON DOCUMENTÉ',score:null,missing:['Dossier de qualification absent'],blocked:[],parts:null};
+    const sources=e.sources||{};
+    for(const k of SOURCE_KEYS) {
+      const s=sources[k];
+      if(!s||!url(s.url)||!F.date(s.date)||s.date>now)
+        missing.push('Source datée manquante : '+k);
+    }
+    if(e.prohibitedActivity===true || e.conventionalFinance===true)
+      blocked.push('Activité exclue par la politique CORE');
+    if(e.prohibitedActivity!==false || e.conventionalFinance!==false)
+      missing.push('Qualification sectorielle incomplète');
+    for(const [key,limit,label] of [
+      ['interestDebtAssets',SELECTION_GATES.interestDebtAssets,'Dette à intérêt / actifs'],
+      ['interestAssets',SELECTION_GATES.interestAssets,'Actifs porteurs d’intérêts / actifs'],
+      ['nonPermissibleRevenue',SELECTION_GATES.nonPermissibleRevenue,'Revenus non conformes']
+    ]) {
+      if(!ratio(e[key])) missing.push('Ratio charia non vérifié : '+label);
+      else if(e[key] > limit || key==='nonPermissibleRevenue'&&e[key]>=limit)
+        blocked.push(label+' au-delà du seuil');
+    }
+    const profits=e.netProfits3Y,revenues=e.revenues3Y;
+    if(!Array.isArray(profits)||profits.length!==3||!profits.every(valid))
+      missing.push('Bénéfices nets des 3 exercices');
+    if(!Array.isArray(revenues)||revenues.length!==3||!revenues.every(v=>valid(v)&&v>0))
+      missing.push('Chiffre d’affaires des 3 exercices');
+    for(const [key,label,condition] of [
+      ['netDebtEbitda','Dette nette / EBITDA',v=>valid(v)&&v>=-100],
+      ['per','PER',v=>valid(v)&&v>0],
+      ['sectorMedianPer','PER médian sectoriel',v=>valid(v)&&v>0],
+      ['evEbitda','EV / EBITDA',v=>valid(v)&&v>0],
+      ['sectorMedianEvEbitda','EV / EBITDA sectoriel',v=>valid(v)&&v>0],
+      ['dividendsPaidYears3Y','Nombre d’années de dividendes',v=>Number.isInteger(v)&&v>=0&&v<=3],
+      ['netYieldPct','Rendement net du dividende',v=>valid(v)&&v>=0&&v<=100],
+      ['payoutRatio','Taux de distribution',ratio],
+      ['tradedSessionShare60','Séances négociées sur 60',ratio],
+      ['medianDailyTurnoverXof','Valeur quotidienne médiane négociée',v=>valid(v)&&v>=0],
+      ['sixMonthPriceReturn','Cours sur six mois ajusté',v=>valid(v)&&v>=-1&&v<=100],
+      ['benchmarkSixMonthReturn','Indice sur six mois',v=>valid(v)&&v>=-1&&v<=100]
+    ]) if(!condition(e[key])) missing.push(label);
+    if(!F.date(e.annualReportDate)||e.annualReportDate>now)
+      missing.push('Date des états annuels audités');
+    else if(e.annualReportDate<addMonths(now,-18))
+      missing.push('États annuels audités périmés');
+    if(typeof e.governanceClear!=='boolean'||typeof e.suspended!=='boolean')
+      missing.push('Statut de gouvernance / cotation');
+    if(e.suspended===true) blocked.push('Cotation suspendue');
+    if(e.governanceClear===false) blocked.push('Signal de gouvernance majeur');
+    if(blocked.length)
+      return {status:'EXCLU / À RÉEXAMINER',score:null,missing,blocked,parts:null};
+    if(missing.length)
+      return {status:'DONNÉES INSUFFISANTES',score:null,missing,blocked,parts:null};
+    const relative=(a,b)=>a<=b?10:a<=b*1.25?5:0;
+    const parts={
+      solidity:(profits.filter(x=>x>0).length>=2?10:0)+(revenues[2]>revenues[0]?10:0)+(e.netDebtEbitda<=2.5?10:0),
+      valuation:relative(e.per,e.sectorMedianPer)+relative(e.evEbitda,e.sectorMedianEvEbitda),
+      dividends:(e.dividendsPaidYears3Y>=2?10:0)+(e.netYieldPct>0&&e.payoutRatio<=.8?5:0),
+      liquidity:(e.tradedSessionShare60>=.7?10:0)+(e.medianDailyTurnoverXof>=5000000?5:e.medianDailyTurnoverXof>=1000000?3:0),
+      trend:e.sixMonthPriceReturn>=e.benchmarkSixMonthReturn?10:e.sixMonthPriceReturn>=e.benchmarkSixMonthReturn-.05?5:0,
+      transparency:5+(e.governanceClear&&!e.suspended?5:0)
+    };
+    const score=Object.values(parts).reduce((a,b)=>a+b,0);
+    return {status:score>=75?'CANDIDAT / CONSERVER':score>=55?'SURVEILLER':'RÉEXAMINER',
+      score,missing:[],blocked:[],parts,asOf:now};
+  }
+  function selectUniverse(d,now=F.today()) {
+    const codes=[...new Set([...E.symbols,...Object.entries(d.instruments||{})
+      .filter(([,i])=>i?.kind==='ACTION').map(([s])=>s)])].sort();
+    const rows=codes.map(symbol=>({symbol,core:E.symbols.includes(symbol),
+      ...evaluateSelection(d.instruments?.[symbol],now)}));
+    const core=rows.filter(x=>x.core),alternatives=rows.filter(x=>!x.core)
+      .filter(x=>x.score!==null&&x.score>=SELECTION_GATES.minCandidateScore)
+      .sort((a,b)=>b.score-a.score||a.symbol.localeCompare(b.symbol));
+    const replacements=[];
+    for(const existing of core) {
+      if(existing.score===null) continue;
+      const better=alternatives.find(a=>a.score>=existing.score+SELECTION_GATES.minScoreAdvantage);
+      if(better) replacements.push({from:existing.symbol,to:better.symbol,
+        fromScore:existing.score,toScore:better.score,requiresUserDecision:true});
+    }
+    return {core,alternatives,replacements,unscored:rows.filter(x=>x.score===null).length,
+      disclaimer:'Présélection automatisée sur données documentées, sans ordre ni modification CORE.'};
+  }
+  return {START,CYCLE,TOLERANCE,HISTORY_LIMIT,SELECTION_WEIGHTS,SELECTION_GATES,addMonths,historyPoint,sixMonthReturn,assess,acknowledge,evaluateSelection,selectUniverse};
 });
