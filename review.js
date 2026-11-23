@@ -44,7 +44,12 @@
     const calc=F.calculate(d),p=calc.portfolios.find(x=>x.id===portfolioId);
     if(!p) throw Error('Portefeuille introuvable.');
     const lastReviewed=d.settings.coreReviews?.[portfolioId]?.reviewedOn||null;
-    const anchor=lastReviewed||START, next=addMonths(anchor,CYCLE), due=now>=next;
+    // Fixed 23 May / 23 November cadence: acknowledging late must not postpone the next audit.
+    const anchor=lastReviewed||START;
+    let next=addMonths(START,CYCLE);
+    for(let period=2;lastReviewed&&next<=lastReviewed&&period<=240;period++)
+      next=addMonths(START,period*CYCLE);
+    const due=now>=next;
     const values=Object.fromEntries(E.symbols.map(sym=>[sym,p.accounts.reduce((n,a)=>
       n+(a.positions[sym]?.market||0)*(a.rate?.xof||0),0)]));
     const base=Object.values(values).reduce((n,v)=>n+v,0);
