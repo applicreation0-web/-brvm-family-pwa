@@ -16,8 +16,8 @@ ALLOWED = re.compile(
     r'(?:README|CHANGELOG|PRIVACY_DEPLOYMENT_WARNING)\.md|DEPLOIEMENT\.txt|'
     r'(?:index\.html|style\.css|manifest\.webmanifest|package\.json)|'
     r'(?:app|sw|finance|engine|analysis|quotes|vault)\.js|'
-    r'icons/icon-(?:192|512)\.png|market/feed\.json|'
-    r'scripts/(?:build|build_android|privacy_check|prepare_feed)\.py|'
+    r'icons/icon-(?:192|512)\.png|icons/icon\.svg|market/feed\.json|'
+    r'scripts/(?:build|build_android|build_icons|privacy_check|prepare_feed)\.py|'
     r'tests/(?:[a-z_0-9]+\.test\.js|[a-z_0-9]+\.py|account-merge\.test\.js)|'
     r'android/(?:settings|build)\.gradle|android/gradle\.properties|android/app/build\.gradle|'
     r'android/app/src/main/AndroidManifest\.xml|'
@@ -73,6 +73,12 @@ def check(name, data, terms=(), current=False):
         raise ValueError('Archive, image ou document inattendu.')
     if name.endswith('.png'):
         inspect_icon(name,data)
+        return
+    if name == 'icons/icon.svg':
+        if len(data)>8192 or b'<script' in data or b'<image' in data or b'foreignObject' in data or b'<!ENTITY' in data:
+            raise ValueError('SVG d’icône non autorisé.')
+        if not data.startswith(b'<svg') or b'</svg>' not in data:
+            raise ValueError('SVG d’icône incomplet.')
         return
     text = data.decode('utf-8')
     if SENSITIVE.search(text):
