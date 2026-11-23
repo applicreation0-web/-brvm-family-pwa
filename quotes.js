@@ -118,5 +118,26 @@
     if(!r.ok) throw Error('Flux de cotations indisponible.');
     return parse(await readLimit(r,MAX_CSV),{source:policy.source,official:policy.bulletinBasis===true,retrievedOn:F.today()});
   }
-  return {parse,parseManual,online,feedEnabled,URL};
+  async function publicWatch(fetcher=fetch) {
+    const response=await fetcher('./market/public-watch.json',{method:'GET',credentials:'same-origin',
+      referrerPolicy:'no-referrer',cache:'no-store',signal:AbortSignal.timeout(10000),redirect:'error'});
+    if(!response.ok) throw Error('Catalogue documentaire indisponible.');
+    const feed=JSON.parse(await readLimit(response,120000));
+    const safeUrl=u=>typeof u==='string'&&u.length<=500&&u.startsWith('https://www.brvm.org/')&&!/[<>\\s]/.test(u);
+    if(feed.schema!=='brvm-public-watch-v1'||!Array.isArray(feed.items)||feed.items.length>75||
+       !Array.isArray(feed.sources)||feed.sources.length>4||
+       !feed.sources.every(safeUrl)||feed.checkedOn!==null&&(!F.date(feed.checkedOn)||feed.checkedOn>F.today()))
+      throw Error('Catalogue officiel invalide.');
+    for(const item of feed.items) {
+      if(!item||!['communique','dividende','fractionnement'].includes(item.type)||
+         !safeUrl(item.url)||!safeUrl(item.sourcePage)||!feed.sources.includes(item.sourcePage)||
+         typeof item.title!=='string'||item.title.length>160||!item.title||
+         typeof item.issuer!=='string'||item.issuer.length>80||!item.issuer||
+         item.publishedOn!==null&&(!F.date(item.publishedOn)||item.publishedOn>F.today())||
+         item.eventOn!==null&&(!F.date(item.eventOn)||item.eventOn>F.today()))
+        throw Error('Lien documentaire non vérifié.');
+    }
+    return feed;
+  }
+  return {parse,parseManual,online,feedEnabled,publicWatch,URL};
 });
