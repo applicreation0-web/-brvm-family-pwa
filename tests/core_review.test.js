@@ -79,7 +79,7 @@ test('CORE05 : l’examen explicite n’exécute aucune opération, statut priv�
   assert.equal(child.settings.coreReviews,undefined);
   assert.equal(child.quoteHistory.SNTS[0].date,'2026-05-20');
   assert.equal(F.calculate(child).accounts[0].positions.SNTS.qty,10);
-  assert.throws(()=>R.acknowledge(reviewed,'main','2026-11-22'),/reculer/);
+  assert.throws(()=>R.acknowledge(reviewed,'main','2026-11-22'),/Date d’examen invalide|reculer/);
 });
 test('CORE06 : sources insuffisantes ou cours anciens = pas de performance semestrielle prétendue',()=>{
   const d=fixture();
