@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#17283A"/>
+      <stop offset=".6" stop-color="#0A1824"/>
+      <stop offset="1" stop-color="#062C26"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2=".9" y2="1">
+      <stop stop-color="#FFF2B3"/>
+      <stop offset=".4" stop-color="#F4C65B"/>
+      <stop offset="1" stop-color="#BC7522"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#night)"/>
+  <rect x="21" y="21" width="470" height="470" rx="100" fill="none" stroke="#C99841" stroke-width="9"/>
+  <g fill="url(#gold)">
+    <path d="M91 330 Q91 318 104 318 H159 Q171 318 171 330 V385 H91 Z"/>
+    <path d="M182 278 Q182 266 195 266 H248 Q260 266 260 278 V385 H182 Z"/>
+    <path d="M270 226 Q270 214 283 214 H337 Q349 214 349 226 V385 H270 Z"/>
+    <path d="M358 171 Q358 159 371 159 H407 Q420 159 420 171 V385 H358 Z"/>
+  </g>
+  <path d="M85 375 C158 350 225 305 291 239 C341 190 372 151 401 112" fill="none"
+        stroke="#79E0B1" stroke-width="20" stroke-linecap="round"/>
+  <path d="M356 119 L419 83 Q429 77 428 91 L421 156 Q419 167 411 154 L397 136 Z" fill="#79E0B1"/>
+  <path d="M82 417 H429" stroke="#DCA645" stroke-width="8" stroke-linecap="round" opacity=".84"/>
+</svg>
