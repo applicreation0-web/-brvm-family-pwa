@@ -176,6 +176,21 @@
     const status=candidateReady?'CANDIDAT / CONSERVER':score>=55?'SURVEILLER':'RÉEXAMINER';
     return {status,score,candidateReady,missing:[],blocked:[],parts,asOf:now};
   }
+  // Safe issuer matching: different West-African subsidiaries must never be conflated.
+  function matchCoreIssuer(name) {
+    if(typeof name!=='string') return null;
+    const issuer=name.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+      .replace(/[^A-Z0-9]+/g,' ').trim().replace(/\s+/g,' ');
+    if(/^(SONATEL|SONATEL SENEGAL|SONATEL SN)$/.test(issuer)) return 'SNTS';
+    if(/^ORANGE (COTE D IVOIRE|CI)$/.test(issuer)) return 'ORAC';
+    if(/^(CIE|CIE CI|CIE COTE D IVOIRE|COMPAGNIE IVOIRIENNE D ELECTRICITE)$/.test(issuer)) return 'CIEC';
+    if(/^TOTALENERGIES (MARKETING )?(CI|COTE D IVOIRE)$/.test(issuer)) return 'TOCI';
+    if(/^SMB( CI| COTE D IVOIRE)?$/.test(issuer)) return 'SMBC';
+    if(/^NESTLE( CI| COTE D IVOIRE)?$/.test(issuer)) return 'NTLC';
+    if(/^PALM( CI| COTE D IVOIRE)?$/.test(issuer)) return 'PALC';
+    return null;
+  }
+
   function selectUniverse(d,now=F.today()) {
     const codes=[...new Set([...E.symbols,...Object.entries(d.instruments||{})
       .filter(([,i])=>i?.kind==='ACTION').map(([s])=>s)])].sort();
@@ -194,5 +209,5 @@
     return {core,alternatives,replacements,unscored:rows.filter(x=>x.score===null).length,
       disclaimer:'Présélection automatisée sur données documentées, sans ordre ni modification CORE.'};
   }
-  return {START,CYCLE,TOLERANCE,HISTORY_LIMIT,SELECTION_WEIGHTS,SELECTION_GATES,addMonths,historyPoint,sixMonthReturn,assess,acknowledge,evaluateSelection,selectUniverse};
+  return {START,CYCLE,TOLERANCE,HISTORY_LIMIT,SELECTION_WEIGHTS,SELECTION_GATES,addMonths,historyPoint,sixMonthReturn,assess,acknowledge,evaluateSelection,selectUniverse,matchCoreIssuer};
 });
