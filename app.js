@@ -508,14 +508,37 @@
         <p>Examiner l’activité, les revenus et ratios financiers et les critères du référentiel choisi. Écarter alcool, tabac, jeux et banques à intérêt selon la stratégie du portefeuille.</p>
         <p class="quiet">Les statuts sont documentés localement. Une absence de source ou une donnée ancienne nécessite une nouvelle vérification.</p>
         <div class="actions">${btn('instrument','Documenter un titre')}${btn('foundation','Saisir des données émetteur')}</div>`)}</div>
-      ${pane('Données financières publiques et vérifications',table(['Titre','PER','Revenus / résultat / marge / croissance','Rendement','Volume / valeur','Date et source','Filtrage / risque','Actions'],symList().map(s=>{
-        const q=db.quotes[s], i=db.instruments[s], f=i?.fundamentals||q?.fundamentals||{};
-        const val=k=>f[k]==null?'Indisponible':fmt.format(f[k]);
-        return [s,val('per'),[val('revenue'),val('earnings'),val('margin'),val('growth')].join(' / '),val('yield'),[val('volume'),val('turnover')].join(' / '),
-          `${showDate(f.date||q?.date)}<br><small>${esc(f.source||q?.source||'Source à renseigner')}</small>`,
-          esc(F.screening(i))+(f.risk?'<br><small>'+esc(f.risk)+'</small>':''),
-          `<div class="actions">${btn('instrument','Filtrage',s)}${btn('foundation','Analyse',s)}</div>`];
-      }))) }`;
+      ${issuerOverview()}`;
+  }
+  function issuerOverview() {
+    const fields=[['per','PER',''],['revenue','Chiffre d’affaires',' F'],['earnings','Résultat net',' F'],
+      ['growth','Croissance',' %'],['margin','Marge',' %'],['yield','Rendement',' %'],
+      ['volume','Volume',' titres'],['turnover','Valeur échangée',' F']];
+    const documented=[],pending=[];
+    for(const symbol of symList()) {
+      const info=db.instruments[symbol]||{},quote=db.quotes[symbol],f=info.fundamentals||quote?.fundamentals||{};
+      const metrics=fields.filter(([key])=>Number.isFinite(f[key]));
+      if(!metrics.length&&!f.source&&!f.risk) {pending.push(symbol);continue;}
+      const details=metrics.map(([key,label,suffix])=>'<div class="issuer-metric"><span>'+esc(label)+
+        '</span><strong>'+fmt.format(f[key])+suffix+'</strong></div>').join('');
+      const date=f.date||quote?.date,source=f.source||quote?.source||'Source non documentée';
+      documented.push('<article class="issuer-card"><div class="issuer-heading"><strong>'+esc(symbol)+
+        '</strong><span>'+esc(info.label||E.names[symbol]||'')+'</span></div><p class="issuer-provenance">'+
+        (date?'Données du '+showDate(date)+' · ':'')+esc(source)+'</p>'+
+        (details?'<div class="issuer-metrics">'+details+'</div>':'<p class="quiet">Aucun ratio chiffré documenté.</p>')+
+        (f.risk?'<p class="issuer-risk">Risque déclaré : '+esc(f.risk)+'</p>':'')+
+        '<div class="issuer-card-actions"><small>'+esc(F.screening(info))+'</small>'+
+        btn('foundation','Données',symbol)+btn('instrument','Filtrage',symbol)+'</div></article>');
+    }
+    const missing=pending.length?'<details class="issuer-pending"><summary>'+pending.length+
+      ' titre(s) sans ratios documentés</summary><p class="quiet">Aucune valeur n’est inventée. Sélectionnez un titre pour documenter sa source.</p>'+
+      '<div class="issuer-pending-list">'+pending.map(symbol=>'<div class="issuer-pending-item"><strong>'+
+      esc(symbol)+'</strong>'+btn('foundation','Renseigner',symbol)+'</div>').join('')+'</div></details>':'';
+    return '<details class="pane issuer-audit"><summary>Données émetteurs · '+documented.length+
+      ' fiche(s) documentée(s)</summary><p class="quiet">Les données manquantes ne sont pas remplacées par zéro. Les contrôles de conformité sont distincts des ratios.</p>'+
+      (documented.length?'<div class="issuer-grid">'+documented.join('')+'</div>':
+        '<p class="empty">Aucune analyse financière documentée. Les cours seuls ne constituent pas une analyse d’émetteur.</p>')+
+      missing+'<div class="actions">'+btn('foundation','Saisir des données émetteur')+'</div></details>';
   }
   function journalRow(t) {
     let value='—';

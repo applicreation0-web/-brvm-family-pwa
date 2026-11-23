@@ -280,3 +280,36 @@ dialog header {position:sticky;top:0;z-index:1;display:flex;justify-content:spac
  .operations-secondary {padding:10px}
  .operations-secondary > summary {font-size:14px}
 }
+
+/* V3.4 — issuer metrics are cards, never an eight-column mobile table. */
+.issuer-audit {overflow:hidden}
+.issuer-audit>summary {cursor:pointer;list-style:disclosure-closed;font-weight:750;font-size:16px;padding:4px 0}
+.issuer-audit[open]>summary {border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:13px}
+.issuer-grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:11px}
+.issuer-card {border:1px solid var(--line);border-radius:11px;background:var(--raised);padding:13px;min-width:0;overflow:hidden}
+.issuer-heading {display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.issuer-heading strong {font-size:16px;color:var(--green)}
+.issuer-heading span {font-size:12px;overflow-wrap:break-word;color:var(--muted)}
+.issuer-provenance {font-size:11px;color:var(--muted);overflow-wrap:anywhere;margin:7px 0 !important}
+.issuer-metrics {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+.issuer-metric {border:1px solid #394353;border-radius:7px;padding:8px;min-width:0}
+.issuer-metric span,.issuer-metric strong {display:block;overflow-wrap:break-word}
+.issuer-metric span {color:var(--muted);font-size:11px}
+.issuer-metric strong {font-size:14px;line-height:1.35;font-variant-numeric:tabular-nums}
+.issuer-risk {font-size:12px;overflow-wrap:anywhere}
+.issuer-card-actions {display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:11px}
+.issuer-card-actions small {margin-right:auto;overflow-wrap:break-word}
+.issuer-card-actions button,.issuer-pending-item button {min-height:38px;padding:7px 10px;background:#223047;border:1px solid #566379}
+.issuer-pending {margin-top:15px;border:1px solid #3a465c;border-radius:10px;padding:10px 12px}
+.issuer-pending>summary {font-weight:700;font-size:13px}
+.issuer-pending-list {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,165px),1fr));gap:7px;margin-top:11px}
+.issuer-pending-item {min-width:0;display:flex;justify-content:space-between;align-items:center;gap:7px;padding:7px 8px;background:#202631;border-radius:7px}
+.issuer-pending-item strong {font-size:12px;overflow-wrap:anywhere}
+@media(max-width:690px) {
+  main {padding-top:max(30px,env(safe-area-inset-top,0px))}
+  .issuer-grid {grid-template-columns:1fr}
+  .issuer-metrics {grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:360px) {
+  .issuer-metrics {grid-template-columns:1fr}
+}

@@ -1,4 +1,4 @@
-# BRVM Family V3.2 — GitHub Pages et APK Android
+# BRVM Family V3.4 — GitHub Pages et APK Android
 
 PWA indépendante, hébergée directement sur GitHub Pages. Aucun hébergement Vercel ou constructeur d'applications n'est nécessaire.
 
@@ -8,8 +8,14 @@ Une fois la publication GitHub Pages activée et les tests réussis :
 
 Sur Android, ouvrir l'adresse dans Chrome puis installer l'application depuis le menu du navigateur.
 
-## Icône Android et PWA V3.3.1
+## Icône Android et PWA V3.4 (identité V3.3.1 conservée)
 Le pictogramme original bleu nuit, or et vert d’eau représente le patrimoine et sa progression. Le même dessin vectoriel génère les PNG 192 et 512 px pendant les compilations sécurisées (application web + Android) ; aucune image personnelle et aucune clé de signature dans le dépôt. Les nouveaux fichiers remplacent l'icône de lancement via une mise à jour signée avec l'ancienne clé privée.
+
+## Ergonomie V3.4 — données émetteurs sur téléphone
+- L'ancienne table horizontale à huit colonnes dans « Cibles et risques » est remplacée par des fiches par titre, repliées au départ et conçues pour les écrans de 360 à 390 px.
+- Afficher exclusivement les ratios chiffrés déjà documentés et la source/date lorsqu'elles existent ; les titres sans ratios passent dans une liste secondaire dépliable, sans « Indisponible » répété ni valeurs financières inventées.
+- Les dossiers de filtrage et les données d'émetteurs restent modifiables via les boutons de chaque fiche ; aucun titre, cash, ordre, transaction ou cible CORE n'est altéré.
+- La nouvelle icône officielle bleu nuit, or et vert d'eau de la version 3.3.1 est conservée dans la PWA et l'APK 3.4.
 
 ## Ergonomie 3.3 — un seul espace Opérations
 - Le menu « Opérations » regroupe Versement ponctuel, Achat exécuté, Vente exécutée, Retrait et Dividende. L'ancien écran « Ordres achat / vente » est intégré dans une section repliable du même espace ; les projets CORE sont également repliables. Les accès rapides du tableau de bord ouvrent les mêmes formulaires, jamais un module comptable concurrent.
