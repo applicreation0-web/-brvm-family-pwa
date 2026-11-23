@@ -170,8 +170,11 @@
       transparency:5+(e.governanceClear&&!e.suspended?5:0)
     };
     const score=Object.values(parts).reduce((a,b)=>a+b,0);
-    return {status:score>=75?'CANDIDAT / CONSERVER':score>=55?'SURVEILLER':'RÉEXAMINER',
-      score,missing:[],blocked:[],parts,asOf:now};
+    // Un score fort ne compense pas des pertes récurrentes ou une négociabilité insuffisante.
+    const candidateReady=score>=75&&profits.filter(x=>x>0).length>=2&&
+      e.tradedSessionShare60>=.7&&e.medianDailyTurnoverXof>=1000000;
+    const status=candidateReady?'CANDIDAT / CONSERVER':score>=55?'SURVEILLER':'RÉEXAMINER';
+    return {status,score,candidateReady,missing:[],blocked:[],parts,asOf:now};
   }
   function selectUniverse(d,now=F.today()) {
     const codes=[...new Set([...E.symbols,...Object.entries(d.instruments||{})
@@ -179,7 +182,7 @@
     const rows=codes.map(symbol=>({symbol,core:E.symbols.includes(symbol),
       ...evaluateSelection(d.instruments?.[symbol],now)}));
     const core=rows.filter(x=>x.core),alternatives=rows.filter(x=>!x.core)
-      .filter(x=>x.score!==null&&x.score>=SELECTION_GATES.minCandidateScore)
+      .filter(x=>x.candidateReady===true&&x.score>=SELECTION_GATES.minCandidateScore)
       .sort((a,b)=>b.score-a.score||a.symbol.localeCompare(b.symbol));
     const replacements=[];
     for(const existing of core) {
