@@ -259,22 +259,26 @@
       (candidateRows?'<ul class="watch-list">'+candidateRows+'</ul>':'')+
       (suggested?'<p>Propositions à examiner :</p><ul>'+suggested+'</ul>':'')+
       '</details>';
-    const matchingCore=item=>{
-      const issuer=item.issuer.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
-      const patterns=[['SNTS',/^SONATEL/],['ORAC',/^ORANGE/],['CIEC',/^CIE( |$)/],
-        ['TOCI',/^(TOTAL|TOTALENERGIES)/],['SMBC',/^SMB( |$)/],
-        ['NTLC',/^NESTLE/],['PALC',/^PALM/]];
-      return patterns.find(([,pattern])=>pattern.test(issuer))?.[0]||null;
+    const news=publicWatch.items.map(item=>({...item,core:R.matchCoreIssuer(item.issuer)}))
+      .sort((a,b)=>(b.publishedOn||b.eventOn||'').localeCompare(a.publishedOn||a.eventOn||''));
+    const coreNews=news.filter(item=>item.core).slice(0,8);
+    const otherNews=news.filter(item=>!item.core).slice(0,6);
+    const officialRow=item=>{
+      const risk=/suspension|annule et remplace|liquidation|sanction|redressement/i.test(item.title);
+      const note=item.type==='fractionnement'?'Opération sur titres à rapprocher sur justificatif, jamais appliquée automatiquement.':
+        risk?'Signal documentaire à examiner ; aucun changement CORE automatique.':
+        ['annuel','financiers','semestriel','trimestriel'].includes(item.type)?
+          'Rapport financier disponible pour analyse ; ses chiffres ne sont pas encore vérifiés automatiquement.':'';
+      return '<li class="watch-issuer"><strong>'+esc(item.core||item.issuer)+'</strong> · '+esc(item.title)+
+        (item.publishedOn?' · publié le '+showDate(item.publishedOn):
+         item.eventOn?' · opération le '+showDate(item.eventOn):' · date de publication non attestée')+
+        (note?'<p class="quiet">'+esc(note)+'</p>':'')+
+        ' · <a target="_blank" rel="noopener noreferrer" href="'+attr(item.url)+'">Voir la source BRVM</a></li>';
     };
-    const news=publicWatch.items.map(item=>({...item,core:matchingCore(item)}))
-      .sort((a,b)=>Number(Boolean(b.core))-Number(Boolean(a.core))||
-        (b.publishedOn||b.eventOn||'').localeCompare(a.publishedOn||a.eventOn||''));
-    const officialRows=news.slice(0,10).map(item=>
-      '<li class="watch-issuer"><strong>'+esc(item.core||item.issuer)+'</strong> · '+esc(item.title)+
-      (item.publishedOn?' · publié le '+showDate(item.publishedOn):
-        item.eventOn?' · date d’événement '+showDate(item.eventOn):'')+
-      (item.type==='fractionnement'?'<p class="watch-warnings">Vérifier si une opération sur titres doit être comptabilisée sur justificatif ; aucune régularisation automatique.</p>':'')+
-      ' · <a target="_blank" rel="noopener noreferrer" href="'+attr(item.url)+'">Document BRVM</a></li>').join('');
+    const officialRows=(coreNews.length?'<p class="quiet">Titres CORE</p><ul class="watch-list">'+
+      coreNews.map(officialRow).join('')+'</ul>':'')+
+      (otherNews.length?'<p class="quiet">Autres émetteurs</p><ul class="watch-list">'+
+       otherNews.map(officialRow).join('')+'</ul>':'');
     const watchAge=publicWatch.checkedOn&&(Date.parse(F.today())-Date.parse(publicWatch.checkedOn)>7*86400000);
     const relevantCount=news.filter(item=>item.core).length;
     const officialPanel='<details class="core-public-watch"><summary>Publications BRVM'+
@@ -284,7 +288,7 @@
       publicWatch.checkedOn===null?'Première collecte documentaire non encore exécutée.':
       'Dernier contrôle documentaire : '+showDate(publicWatch.checkedOn)+(watchAge?' (ancien)':''))+
       '. Documents officiels uniquement, sans cotation ni confirmation de conformité charia. Aucune opération financière exécutée.</p>'+
-      (officialRows?'<ul class="watch-list">'+officialRows+'</ul>':'')+
+      officialRows+
       '</details>';
     const tracked=review.rows.map(x=>{
       const main=x.quantity>0?'<strong>'+fc(x.market)+'</strong> · coût '+fc(x.cost):'<span class="quiet">Aucune position détenue</span>';
