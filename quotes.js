@@ -123,7 +123,7 @@
       referrerPolicy:'no-referrer',cache:'no-store',signal:AbortSignal.timeout(10000),redirect:'error'});
     if(!response.ok) throw Error('Catalogue documentaire indisponible.');
     const feed=JSON.parse(await readLimit(response,120000));
-    const safeUrl=u=>typeof u==='string'&&u.length<=500&&u.startsWith('https://www.brvm.org/')&&!/[<>\\s]/.test(u);
+    const safeUrl=u=>typeof u==='string'&&u.length<=500&&u.startsWith('https://www.brvm.org/')&&!/[<>\s]/.test(u);
     if(feed.schema!=='brvm-public-watch-v1'||!Array.isArray(feed.items)||feed.items.length>75||
        !Array.isArray(feed.sources)||feed.sources.length>4||
        !feed.sources.every(safeUrl)||feed.checkedOn!==null&&(!F.date(feed.checkedOn)||feed.checkedOn>F.today()))
