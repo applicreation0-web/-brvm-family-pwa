@@ -114,7 +114,7 @@
     if(EXCLUDED_INSTRUMENTS.has(symbol)) return true;
     const name=typeof instrument?.label==='string'?instrument.label.toUpperCase()
       .normalize('NFD').replace(/[\u0300-\u036f]/g,''):'';
-    return /\\b(BANQUE|BANK OF AFRICA|ECOBANK|ASSURANCE|TABAC|CIGARETTE|LOTERIE|CASINO|BRASSERIE)\\b/.test(name);
+    return /\b(BANQUE|BANK OF AFRICA|ECOBANK|ASSURANCE|TABAC|CIGARETTE|LOTERIE|CASINO|BRASSERIE)\b/.test(name);
   }
   function evaluateSelection(instrument,now=F.today(),symbol='') {
     const e=instrument?.selection;
