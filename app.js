@@ -252,7 +252,7 @@
       'Candidat à partir de 75 points ; surveiller de 55 à 74 ; réexaminer sous 55. '+
       'Un remplaçant doit dépasser le sortant de 10 points au moins.</p>'+
       '<p class="quiet">Le score exige des documents et des périodes datés ; il ne remplace pas la vérification des sources. '+
-      'La veille externe et les cotations ne sont pas synchronisées automatiquement avec cet appareil.</p>'+
+      'La veille documentaire publique est actualisée par GitHub Actions ; les cotations et ratios pour la notation restent non synchronisés en l’absence de source autorisée. Les deux revues externes ne sont pas importées automatiquement.</p>'+
       '<ul class="watch-list">'+scoreRows+'</ul>'+
       '<p class="quiet">Alternatives BRVM préqualifiées : '+selection.alternatives.length+
       '. Une absence de candidat peut refléter des données manquantes.</p>'+
