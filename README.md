@@ -1,10 +1,10 @@
-# BRVM Family V3.6 — GitHub Pages et APK Android
+# BRVM Family V3.7 — GitHub Pages et APK Android
 
 PWA indépendante, hébergée directement sur GitHub Pages. Aucun hébergement Vercel ou constructeur d'applications n'est nécessaire.
 
 
 ## Veille documentaire autonome — sources officielles publiques
-- Un workflow GitHub Actions `.github/workflows/public-watch.yml` vérifie les pages publiques BRVM en semaine, copie uniquement les intitulés brefs et liens des communiqués, avis de dividendes et fractionnements, puis actualise `market/public-watch.json` dans le dépôt.
+- Un workflow GitHub Actions `.github/workflows/public-watch.yml` vérifie les pages publiques BRVM en semaine et référence les communiqués, les avis de dividendes/fractionnements et les rapports annuels, semestriels, trimestriels et états financiers, puis actualise `market/public-watch.json` dans le dépôt.
 - La PWA récupère uniquement ce fichier public sur son propre domaine, sans envoyer d'informations sur les comptes ou le portefeuille. Une source indisponible ou un document non vérifiable n'est jamais traité comme une information certifiée.
 - **La veille documentaire ne remplace ni les cotations autorisées, ni l'analyse complète des états financiers** : le barème CORE repose toujours sur les dossiers de sélection justifiés et disponibles localement. Le flux de prix commercial demeure désactivé.
 - Le workflow n'édite jamais de portefeuille et ne transmet aucune donnée financière privée.
