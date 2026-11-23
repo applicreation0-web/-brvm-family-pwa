@@ -73,6 +73,20 @@ test('SEL04 : score faible, surveillance et classement sans renverser les exclus
   watch.per=40;watch.evEbitda=50;watch.dividendsPaidYears3Y=0;
   assert.equal(R.evaluateSelection({selection:watch},NOW).status,'SURVEILLER');
 });
+test('SEL06 : score supérieur à 75 insuffisant sans bénéfices réguliers et liquidité',()=>{
+  const noProfit=evidence();noProfit.netProfits3Y=[-10,-5,100];
+  const s=R.evaluateSelection({selection:noProfit},NOW);
+  assert(s.score>=75);
+  assert.equal(s.candidateReady,false);
+  assert.equal(s.status,'SURVEILLER');
+  const noLiquidity=evidence();noLiquidity.tradedSessionShare60=.4;
+  const s2=R.evaluateSelection({selection:noLiquidity},NOW);
+  assert(s2.score>=75);
+  assert.equal(s2.candidateReady,false);
+  const d=F.empty();
+  d.instruments.TEST={kind:'ACTION',label:'Hypothétique',selection:noLiquidity};
+  assert.equal(R.selectUniverse(d,NOW).alternatives.length,0);
+});
 test('SEL05 : recherche sur toute la cote connue, recommandation non transactionnelle',()=>{
   const d=F.empty();
   d.instruments.SNTS={kind:'ACTION',label:'Sonatel fictif',selection:evidence()};
