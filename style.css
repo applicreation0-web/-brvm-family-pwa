@@ -258,3 +258,25 @@ dialog header {position:sticky;top:0;z-index:1;display:flex;justify-content:spac
  .allocation-legend .allocation-value small {line-height:1.25}
  .core-notice button {width:100%}
 }
+
+/* V3.3 — un parcours transactionnel, navigation simple, détails secondaires repliés. */
+.operations-actions {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:5px 0 14px}
+.operations-actions button {min-height:52px;border:1px solid #526075;font-weight:750;white-space:normal}
+.operations-secondary {border:1px solid var(--line);background:var(--panel);border-radius:13px;padding:12px 15px;margin-bottom:13px;color:var(--text)}
+.operations-secondary > summary {font-size:15px;font-weight:750;color:var(--text);min-height:39px;display:list-item}
+.operations-secondary[open] > summary {margin-bottom:12px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.operations-secondary .pane {background:var(--raised)}
+.operations-secondary > .quiet {margin:10px 0}
+.operations-secondary .invest-layout {grid-template-columns:minmax(230px,1fr) minmax(0,2fr)}
+@media(max-width:890px) {
+ .operations-actions {grid-template-columns:repeat(3,minmax(0,1fr))}
+ .operations-secondary .invest-layout {grid-template-columns:1fr}
+}
+@media(max-width:690px) {
+ .quick-actions {grid-template-columns:repeat(3,minmax(0,1fr))}
+ .quick-actions button:last-child {grid-column:auto}
+ .quick-actions button,.operations-actions button {min-height:48px;padding:8px 5px;font-size:13px}
+ .operations-actions {grid-template-columns:repeat(3,minmax(0,1fr))}
+ .operations-secondary {padding:10px}
+ .operations-secondary > summary {font-size:14px}
+}
