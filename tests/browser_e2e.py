@@ -119,6 +119,13 @@ def check(first, second):
         page.locator('#nav [data-page=dashboard]').press('Enter')
         expect(page.locator('.allocation-pie')).to_be_visible()
         expect(page.get_by_role('heading', name='CORE · Toutes les SGI face aux cibles du portefeuille')).to_be_visible()
+        watch=page.locator('.core-watch')
+        expect(watch.get_by_role('heading', name='Veille des actions CORE')).to_be_visible()
+        expect(watch.get_by_text('Prochaine revue : 23/05/2027', exact=False)).to_be_visible()
+        watch.locator('details').evaluate('(el)=>el.open=true')
+        expect(watch.locator('.watch-issuer')).to_have_count(7)
+        expect(watch.get_by_text('Historique de cours comparable sur 6 mois insuffisant', exact=False).first).to_be_visible()
+        assert page.locator('.core-watch [data-action=ack-core-review]').count()==0
         expect(page.get_by_role('button', name='Acheter', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name='Vendre', exact=True)).to_be_visible()
         # Vendre 2 actions avec frais vrais, puis racheter une action sur avis.
