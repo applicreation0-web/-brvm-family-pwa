@@ -107,9 +107,21 @@
   });
   const SOURCE_KEYS=['screening','financial','valuation','dividends','liquidity','prices','governance'];
   const SOURCE_FRESH_MONTHS={screening:12,financial:18,valuation:1,dividends:18,liquidity:1,prices:1,governance:3};
-  function evaluateSelection(instrument,now=F.today()) {
+  const EXCLUDED_INSTRUMENTS=new Set([
+    'SGBC','CBIB','ECOC','SIBC','ETIT','BICB','BOAB','BOAC','BOAF','BOAM','BOAN','BOAS','STBC'
+  ]);
+  function forbiddenBusiness(instrument,symbol='') {
+    if(EXCLUDED_INSTRUMENTS.has(symbol)) return true;
+    const name=typeof instrument?.label==='string'?instrument.label.toUpperCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g,''):'';
+    return /\\b(BANQUE|BANK OF AFRICA|ECOBANK|ASSURANCE|TABAC|CIGARETTE|LOTERIE|CASINO|BRASSERIE)\\b/.test(name);
+  }
+  function evaluateSelection(instrument,now=F.today(),symbol='') {
     const e=instrument?.selection;
     const missing=[], blocked=[];
+    if(forbiddenBusiness(instrument,symbol))
+      return {status:'EXCLU / À RÉEXAMINER',score:null,missing:[],
+        blocked:['Secteur ou émetteur exclu par la politique CORE'],parts:null,candidateReady:false};
     const valid=n=>typeof n==='number'&&Number.isFinite(n);
     const ratio=n=>valid(n)&&n>=0&&n<=1;
     const url=s=>typeof s==='string'&&/^https:\/\/[^\s/?#]+(?:[^\s]*)$/.test(s)&&s.length<=500;
@@ -203,7 +215,7 @@
     const codes=[...new Set([...E.symbols,...Object.entries(d.instruments||{})
       .filter(([,i])=>i?.kind==='ACTION').map(([s])=>s)])].sort();
     const rows=codes.map(symbol=>({symbol,core:E.symbols.includes(symbol),
-      ...evaluateSelection(d.instruments?.[symbol],now)}));
+      ...evaluateSelection(d.instruments?.[symbol],now,symbol)}));
     const core=rows.filter(x=>x.core),alternatives=rows.filter(x=>!x.core)
       .filter(x=>x.candidateReady===true&&x.score>=SELECTION_GATES.minCandidateScore)
       .sort((a,b)=>b.score-a.score||a.symbol.localeCompare(b.symbol));
@@ -217,5 +229,5 @@
     return {core,alternatives,replacements,unscored:rows.filter(x=>x.score===null).length,
       disclaimer:'Présélection automatisée sur données documentées, sans ordre ni modification CORE.'};
   }
-  return {START,CYCLE,TOLERANCE,HISTORY_LIMIT,SELECTION_WEIGHTS,SELECTION_GATES,addMonths,nextCoreReview,historyPoint,sixMonthReturn,assess,acknowledge,evaluateSelection,selectUniverse,matchCoreIssuer};
+  return {START,CYCLE,TOLERANCE,HISTORY_LIMIT,SELECTION_WEIGHTS,SELECTION_GATES,addMonths,nextCoreReview,historyPoint,sixMonthReturn,assess,acknowledge,evaluateSelection,selectUniverse,matchCoreIssuer,forbiddenBusiness};
 });
