@@ -2,6 +2,8 @@ name: Publication BRVM Family — GitHub Pages
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -46,6 +48,7 @@ jobs:
           path: dist/
 
   deploy:
+    if: github.event_name != 'pull_request'
     name: Héberger avec GitHub Pages
     needs: validate
     runs-on: ubuntu-latest
