@@ -259,17 +259,31 @@
       (candidateRows?'<ul class="watch-list">'+candidateRows+'</ul>':'')+
       (suggested?'<p>Propositions à examiner :</p><ul>'+suggested+'</ul>':'')+
       '</details>';
-    const officialRows=publicWatch.items.slice(0,8).map(item=>
-      '<li class="watch-issuer"><strong>'+esc(item.issuer)+'</strong> · '+esc(item.title)+
-      (item.publishedOn?' · '+showDate(item.publishedOn):'')+
+    const matchingCore=item=>{
+      const issuer=item.issuer.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+      const patterns=[['SNTS',/^SONATEL/],['ORAC',/^ORANGE/],['CIEC',/^CIE( |$)/],
+        ['TOCI',/^(TOTAL|TOTALENERGIES)/],['SMBC',/^SMB( |$)/],
+        ['NTLC',/^NESTLE/],['PALC',/^PALM/]];
+      return patterns.find(([,pattern])=>pattern.test(issuer))?.[0]||null;
+    };
+    const news=publicWatch.items.map(item=>({...item,core:matchingCore(item)}))
+      .sort((a,b)=>Number(Boolean(b.core))-Number(Boolean(a.core))||
+        (b.publishedOn||b.eventOn||'').localeCompare(a.publishedOn||a.eventOn||''));
+    const officialRows=news.slice(0,10).map(item=>
+      '<li class="watch-issuer"><strong>'+esc(item.core||item.issuer)+'</strong> · '+esc(item.title)+
+      (item.publishedOn?' · publié le '+showDate(item.publishedOn):
+        item.eventOn?' · date d’événement '+showDate(item.eventOn):'')+
+      (item.type==='fractionnement'?'<p class="watch-warnings">Vérifier si une opération sur titres doit être comptabilisée sur justificatif ; aucune régularisation automatique.</p>':'')+
       ' · <a target="_blank" rel="noopener noreferrer" href="'+attr(item.url)+'">Document BRVM</a></li>').join('');
-    const watchAge=publicWatch.checkedOn&&publicWatch.checkedOn<F.today().slice(0,7)+'-01';
-    const officialPanel='<details class="core-public-watch"><summary>Publications BRVM · veille documentaire</summary>'+
+    const watchAge=publicWatch.checkedOn&&(Date.parse(F.today())-Date.parse(publicWatch.checkedOn)>7*86400000);
+    const relevantCount=news.filter(item=>item.core).length;
+    const officialPanel='<details class="core-public-watch"><summary>Publications BRVM'+
+      (relevantCount?' · '+relevantCount+' concernant le CORE':'')+'</summary>'+
       '<p class="quiet">'+(publicWatch.status==='chargement'?'Vérification des annonces publiques…':
       publicWatch.status==='erreur'?'Flux documentaire indisponible : aucune publication inventée.':
       publicWatch.checkedOn===null?'Première collecte documentaire non encore exécutée.':
       'Dernier contrôle documentaire : '+showDate(publicWatch.checkedOn)+(watchAge?' (ancien)':''))+
-      '. Les communiqués et avis sont des liens officiels, pas des cours ni une validation de conformité charia.</p>'+
+      '. Documents officiels uniquement, sans cotation ni confirmation de conformité charia. Aucune opération financière exécutée.</p>'+
       (officialRows?'<ul class="watch-list">'+officialRows+'</ul>':'')+
       '</details>';
     const tracked=review.rows.map(x=>{
