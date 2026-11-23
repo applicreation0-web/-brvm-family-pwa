@@ -184,6 +184,11 @@ def check(first, second):
         # Les ordres de même nature sont regroupés dans une sous-section, non dans un menu redondant.
         page.locator('.operations-orders').evaluate('(el)=>el.open=true')
         expect(page.get_by_role('button', name='Créer un projet d’ordre')).to_be_visible()
+        page.set_viewport_size({'width':390,'height':850})
+        shots=ROOT / 'test_artifacts';shots.mkdir(exist_ok=True)
+        page.screenshot(path=str(shots / 'operations_fictives_android_390px.png'),full_page=True)
+        page.locator('#nav [data-page=history]').press('Enter')
+        expect(page.get_by_text('Frais de compte · Virement / transfert', exact=False).first).to_be_visible()
         page.locator('#nav [data-page=accounts]').press('Enter')
         expect(page.locator('article h2').filter(has_text='Compte fictif E2E')).to_be_visible()
         expect(page.get_by_text('6', exact=True).first).to_be_visible()
