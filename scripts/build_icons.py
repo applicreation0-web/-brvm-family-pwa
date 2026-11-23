@@ -7,7 +7,7 @@ SOURCE=ROOT / 'icons' / 'icon.svg'
 
 def build():
     data=SOURCE.read_bytes()
-    if b'<script' in data or b'http://' in data or b'https://' in data:
+    if b'<script' in data or b'<image' in data or b'xlink:href' in data or b'foreignObject' in data or b'url(http' in data:
         raise SystemExit('Icon source contains external or executable references.')
     for size in (192,512):
         output=ROOT/'icons'/f'icon-{size}.png'
