@@ -88,3 +88,12 @@ test('CORE06 : sources insuffisantes ou cours anciens = pas de performance semes
   assert.equal(stale.rows.find(x=>x.symbol==='SNTS').change,null);
   assert(stale.rows.find(x=>x.symbol==='SNTS').warnings.some(w=>w.includes('ancien')));
 });
+
+test('CORE07 : une revue tardive ne décale pas le calendrier fixe de mai/novembre',()=>{
+  const d=fixture();
+  const late=R.acknowledge(d,'main','2027-07-01');
+  const r=R.assess(late,'main','2027-07-10');
+  assert.equal(r.due,false);
+  assert.equal(r.dueOn,'2027-11-23');
+  assert.equal(R.assess(late,'main','2027-11-23').due,true);
+});
