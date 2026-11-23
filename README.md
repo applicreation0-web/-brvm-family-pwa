@@ -59,3 +59,6 @@ Si Pages est désactivé, ouvrir [Settings → Pages](https://github.com/applicr
 
 ## Développement
 `npm test`, `python -m unittest discover -s tests -p 'test_*.py'`, `python scripts/build.py dist`.
+
+## Version distribuée 3.3.0
+L’interface réunit désormais les versements, achats et ventes sur l’écran **Opérations**, avec le suivi des ordres et les frais distincts accessibles depuis ce même écran. Les changements ont passé les tests financiers et Chromium sur données fictives. Le rapprochement avec les avis de la SGI demeure indispensable pour les frais réels.
