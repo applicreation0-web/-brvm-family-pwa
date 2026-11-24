@@ -423,7 +423,7 @@
       const expected=view.getUint32(offset+14,true),compressed=view.getUint32(offset+18,true);
       const size=view.getUint32(offset+22,true),nameLength=view.getUint16(offset+26,true);
       const extra=view.getUint16(offset+28,true);
-      if((flags&9)||(method!==0&&method!==8)||size>MAX||files.size>=20||!nameLength)
+      if((flags&9)||(method!==0&&method!==8)||size>MAX||files.size>=100||!nameLength)
         throw Error('ZIP non pris en charge ou incomplet.');
       total+=size;
       if(total>128*1024*1024) throw Error('Contenu ZIP trop volumineux.');
