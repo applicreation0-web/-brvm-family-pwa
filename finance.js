@@ -153,8 +153,8 @@
       fail(index.owners.has(p.ownerId), 'Propriétaire inconnu.');
       fail(p.targets && typeof p.targets==='object' && !Array.isArray(p.targets) &&
         Object.keys(p.targets).length>=1 && Object.keys(p.targets).length<=12 &&
-        Object.entries(p.targets).every(([s,v])=>eligibleCoreSymbol(d,s) &&
-          s===normalizeSymbol(s) && num(v) && v<=1) &&
+        Object.entries(p.targets).every(([s,v])=>symbol(s) &&
+          s===normalizeSymbol(s) && !banks.has(s) && num(v) && v<=1) &&
         Math.abs(Object.values(p.targets).reduce((n,v)=>n+v,0)-1)<0.000001,
         'Actions CORE invalides, exclues, en doublon ou pondérations différentes de 100 %.');
     }
