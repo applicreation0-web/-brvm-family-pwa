@@ -351,6 +351,7 @@
       form('buy-budget',
         field('accountId','1. Compte / SGI',select('accountId',accountsOptions(list),preferred.id))+
         field('budget','2. Montant maximum que je souhaite investir (FCFA)',integer('budget',Math.floor(available)))+
+        '<p class="quiet" id="buy-cash-tip">Disponible sur ce compte : '+fc(available)+'</p>'+
         field('orderMode','3. Mode de préparation',select('orderMode',[
           ['LIMIT','Cours limite · protège le prix maximal par action'],
           ['MARKET','Au marché · total d’exécution NON garanti']],'LIMIT'))+
@@ -360,7 +361,8 @@
         ' · Les scénarios refusent les cotations datant de plus d’une séance ouvrée. Les frais fixes ou taxes non paramétrés doivent être ajoutés avant un ordre réel.</p>'+
         '<p><a href="https://www.brvm.org/fr/cours-actions/officiel" target="_blank" rel="noopener noreferrer">Consulter les cours officiels BRVM</a> · '+
         '<a href="https://www.brvm.org/fr/application-mobile" target="_blank" rel="noopener noreferrer">Application BRVM (différé 15 min)</a></p>',
-        'Calculer mes scénarios'));
+        'Calculer mes scénarios')+
+      '<div class="actions">'+btn('buy-manual','Saisir un achat déjà exécuté (avis SGI)')+'</div>');
   }
   function showPurchaseScenarios() {
     const draft=buyDraft;
@@ -923,6 +925,7 @@
         case 'open-orders': goTo('invest');$('.operations-orders').open=true;$('.operations-orders').scrollIntoView({block:'start'});break;
         case 'trade-buy': purchaseGuide();break;
         case 'buy-restart': purchaseGuide(buyDraft?.result.accountId);break;
+        case 'buy-manual': transaction('BUY');break;
         case 'buy-executed': {
           if(!buyDraft||buyDraft.revision!==record.revision) throw Error('Vos espèces ont changé : recalculez les scénarios.');
           const [key,index]=id.split('|');
@@ -1401,6 +1404,14 @@
     const el=e.target;
     if(!db) return;
     if(el.closest('form[data-form=tx]')) clearTransactionConfirmation(el.closest('form[data-form=tx]'));
+    if(el.matches('form[data-form=buy-budget] [name=accountId]')) {
+      const a=calc.accounts.find(a=>a.id===el.value);
+      const available=Math.max(0,Math.floor(a?.available||0));
+      const form=el.form,amount=form.elements.budget;
+      amount.value=String(Math.min(Math.max(0,Number(amount.value)||0),available));
+      const tip=form.querySelector('#buy-cash-tip');
+      if(tip) tip.textContent='Disponible sur ce compte : '+fc(available);
+    }
     if(el.matches('form[data-form=invest] [name=mode]')) {
       const options=el.form.querySelector('[data-manual]');
       options.hidden=el.value!=='manuel';
