@@ -25,7 +25,6 @@
   const pages={dashboard:['Vue d’ensemble','▦'],accounts:['Comptes et positions','▤'],invest:['Opérations','⇄'],
     events:['Dividendes et FCP','◈'],history:['Historique et analyses','◷'],settings:['Cibles et risques','⚙'],data:['Données et sauvegarde','⬡']};
   const mainPages=['dashboard','accounts','invest','events','history'];
-  let publicWatch={status:'chargement',checkedOn:null,items:[]};
   let store, record, db, calc, tab='dashboard', portfolioId='', busy=false, refreshing=false, plan=null, comparison=null, planInputs=null, importPreview=null;
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
@@ -257,92 +256,6 @@
         '<label class="check"><input type="checkbox" name="confirmed" required> Je confirme : seules les cibles CORE changent, jamais mes positions réelles.</label>',
         'Enregistrer les actions du CORE',p.id)
     );
-  }
-  function coreWatch(p) {
-    const review=R.assess(db,p.id);
-    const summary=review.due?'Revue semestrielle à examiner': 'Prochaine revue : '+showDate(review.dueOn);
-    const selection=R.selectUniverse(db);
-    const qualified=selection.core.filter(x=>x.score!==null).length;
-    const scoreRows=selection.core.map(x=>
-      '<li class="watch-issuer"><strong>'+esc(x.symbol)+'</strong> · '+
-      (x.score===null?'Non classable — '+esc(x.status):x.score+'/100 — '+esc(x.status))+
-      (x.score===null?'<p class="quiet">'+esc(x.missing.slice(0,2).join(' · '))+'</p>':'')+'</li>').join('');
-    const candidateRows=selection.alternatives.slice(0,5).map(x=>
-      '<li class="watch-issuer"><strong>'+esc(x.symbol)+'</strong> · '+x.score+
-      '/100 · admissibilité documentaire à recouper</li>').join('');
-    const suggested=selection.replacements.slice(0,3).map(x=>
-      '<li>'+esc(x.from)+' → '+esc(x.to)+' ('+x.fromScore+
-      ' → '+x.toScore+'/100) · décision manuelle requise</li>').join('');
-    const selectionPanel='<details class="core-selection"><summary>Critères de sélection · '+
-      qualified+'/7 titres CORE classables</summary>'+
-      '<p class="quiet">Filtre préalable : activité conforme et ratios financiers charia documentés ; absence de preuve = non classable. '+
-      'Note /100 : solidité 30, valorisation 20, dividendes 15, liquidité 15, cours 6 mois 10, gouvernance 10. '+
-      'Candidat à partir de 75 points ; surveiller de 55 à 74 ; réexaminer sous 55. '+
-      'Un remplaçant doit dépasser le sortant de 10 points au moins.</p>'+
-      '<p class="quiet">Le score exige des documents et des périodes datés ; il ne remplace pas la vérification des sources. '+
-      'La veille externe et les cotations ne sont pas synchronisées automatiquement avec cet appareil.</p>'+
-      '<ul class="watch-list">'+scoreRows+'</ul>'+
-      '<p class="quiet">Alternatives BRVM préqualifiées : '+selection.alternatives.length+
-      '. Une absence de candidat peut refléter des données manquantes.</p>'+
-      (candidateRows?'<ul class="watch-list">'+candidateRows+'</ul>':'')+
-      (suggested?'<p>Propositions à examiner :</p><ul>'+suggested+'</ul>':'')+
-      '</details>';
-    const matchingCore=item=>{
-      const issuer=item.issuer.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
-      const patterns=[['SNTS',/^SONATEL/],['ORAC',/^ORANGE/],['CIEC',/^CIE( |$)/],
-        ['TOCI',/^(TOTAL|TOTALENERGIES)/],['SMBC',/^SMB( |$)/],
-        ['NTLC',/^NESTLE/],['PALC',/^PALM/]];
-      return patterns.find(([,pattern])=>pattern.test(issuer))?.[0]||null;
-    };
-    const news=publicWatch.items.map(item=>({...item,core:matchingCore(item)}))
-      .sort((a,b)=>Number(Boolean(b.core))-Number(Boolean(a.core))||
-        (b.publishedOn||b.eventOn||'').localeCompare(a.publishedOn||a.eventOn||''));
-    const officialRows=news.slice(0,10).map(item=>
-      '<li class="watch-issuer"><strong>'+esc(item.core||item.issuer)+'</strong> · '+esc(item.title)+
-      (item.publishedOn?' · publié le '+showDate(item.publishedOn):
-        item.eventOn?' · date d’événement '+showDate(item.eventOn):'')+
-      (item.type==='fractionnement'?'<p class="watch-warnings">Vérifier si une opération sur titres doit être comptabilisée sur justificatif ; aucune régularisation automatique.</p>':'')+
-      ' · <a target="_blank" rel="noopener noreferrer" href="'+attr(item.url)+'">Document BRVM</a></li>').join('');
-    const watchAge=publicWatch.checkedOn&&(Date.parse(F.today())-Date.parse(publicWatch.checkedOn)>7*86400000);
-    const relevantCount=news.filter(item=>item.core).length;
-    const officialPanel='<details class="core-public-watch"><summary>Publications BRVM'+
-      (relevantCount?' · '+relevantCount+' concernant le CORE':'')+'</summary>'+
-      '<p class="quiet">'+(publicWatch.status==='chargement'?'Vérification des annonces publiques…':
-      publicWatch.status==='erreur'?'Flux documentaire indisponible : aucune publication inventée.':
-      publicWatch.checkedOn===null?'Première collecte documentaire non encore exécutée.':
-      'Dernier contrôle documentaire : '+showDate(publicWatch.checkedOn)+(watchAge?' (ancien)':''))+
-      '. Documents officiels uniquement, sans cotation ni confirmation de conformité charia. Aucune opération financière exécutée.</p>'+
-      (officialRows?'<ul class="watch-list">'+officialRows+'</ul>':'')+
-      '</details>';
-    const tracked=review.rows.map(x=>{
-      const main=x.quantity>0?'<strong>'+fc(x.market)+'</strong> · coût '+fc(x.cost):'<span class="quiet">Aucune position détenue</span>';
-      const six=x.change
-        ?'<span class="'+(x.change.change<0?'loss':'gain')+'">'+(x.change.change>=0?'+':'')+pct(x.change.change)+'</span> · '+showDate(x.change.from)+' → '+showDate(x.change.to)
-        :'<span class="quiet">Historique de cours comparable sur 6 mois insuffisant</span>';
-      const pnl=x.sincePurchase===null?'—':(x.sincePurchase>=0?'+':'')+pct(x.sincePurchase);
-      const gap=x.gap===null?'—':(x.gap>=0?'+':'')+pct(x.gap);
-      const warnings=x.warnings.length?'<p class="watch-warnings">'+esc(x.warnings.join(' · '))+'</p>':'';
-      return '<li class="watch-issuer"><div class="watch-heading"><strong>'+esc(x.symbol)+'</strong>'+
-        '<span>Poids '+pct(x.actual)+' / cible '+pct(x.target)+' · écart '+gap+'</span></div>'+
-        '<p>'+main+' · P/L depuis achats '+esc(pnl)+'</p>'+
-        '<p>Variation de cours sur 6 mois : '+six+'</p>'+
-        '<p class="quiet">Cours '+showDate(x.quoteDate)+' · résultats '+showDate(x.finDate)+' · filtrage '+esc(x.screening)+'</p>'+
-        warnings+'</li>';
-    }).join('');
-    return `<article class="pane core-watch ${review.due?'core-watch-due':''}">
-      <div class="pane-head"><h2>Veille des actions CORE</h2>
-        <p>${esc(summary)} · ${review.alerts} titre(s) à documenter ou surveiller</p></div>
-      <details ${review.due?'open':''}>
-        <summary>Suivi des 7 titres · cours, résultats, pondérations et signaux</summary>
-        <p class="quiet">Analyse automatique des données conservées sur cet appareil, sans accès aux autres données privées. Écart aux cibles : alerte au-delà de ±2 points. Les cours anciens, les publications manquantes et les fractionnements non documentés limitent la fiabilité des comparaisons.</p>
-        <ul class="watch-list">${tracked}</ul>
-        <p class="quiet">La variation sur six mois est celle du cours uniquement, hors dividendes, à partir de deux dates comparables disponibles. Le P/L depuis achats utilise le coût de revient enregistré, frais compris : ce n’est pas une performance semestrielle.</p>
-        <p class="quiet">La revue peut conduire à conserver, surveiller ou proposer de modifier CORE. Elle ne vend, n’achète ni ne change les cibles automatiquement. Les documents publics doivent être vérifiés avant décision.</p>
-        ${review.due?btn('ack-core-review','Consigner l’examen de la revue',p.id,'primary'):''}
-      </details>
-      ${selectionPanel}
-      ${officialPanel}
-    </article>`;
   }
   function dashboard() {
     if(!db.accounts.length) return welcome();
@@ -1368,13 +1281,6 @@
     try {await offer.prompt();} catch {notify('Installation indisponible dans cette fenêtre.',true);}
   });
   function start() {
-    Q.publicWatch().then(feed=>{
-      publicWatch={...feed,status:'ok'};
-      if(db&&tab==='dashboard') render();
-    }).catch(()=>{
-      publicWatch={status:'erreur',checkedOn:null,items:[]};
-      if(db&&tab==='dashboard') render();
-    });
     if('serviceWorker' in navigator && isSecureContext)
       navigator.serviceWorker.register('./sw.js').then(registration=>{
         const announce=()=>{
