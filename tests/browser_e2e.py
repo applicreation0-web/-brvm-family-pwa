@@ -247,6 +247,34 @@ def check(first, second):
         expect(manual).not_to_be_visible()
         assert page.locator('.total').text_content()==original_total
 
+        # Contrôles négatifs sur le formulaire réel : aucune mutation en cas de saisie fausse.
+        editor_button.click()
+        manual=page.get_by_role('dialog')
+        manual.locator('[name=core_weight_0]').fill('30.01')
+        manual.locator('[name=confirmed]').check()
+        manual.locator('button[type=submit]').click()
+        expect(manual.locator('.modal-error')).to_contain_text('exactement 100 %')
+        assert page.locator('.total').text_content()==original_total
+        manual.locator('[name=core_weight_0]').fill('30')
+        manual.locator('[name=core_symbol_7]').fill('SNTS')
+        manual.locator('[name=core_weight_7]').fill('1')
+        manual.locator('button[type=submit]').click()
+        expect(manual.locator('.modal-error')).to_contain_text('doublon')
+        manual.locator('[name=core_symbol_7]').fill('SGBC')
+        manual.locator('button[type=submit]').click()
+        expect(manual.locator('.modal-error')).to_contain_text('exclue')
+        manual.locator('[name=core_symbol_7]').fill('')
+        manual.locator('[name=core_weight_7]').fill('')
+        # Alias de marché TTLC normalisé vers TOCI et sauvegardé sans doublon.
+        manual.locator('[name=core_symbol_3]').fill('TTLC')
+        manual.locator('button[type=submit]').click()
+        expect(manual).not_to_be_visible()
+        assert page.locator('.total').text_content()==original_total
+        editor_button.click()
+        manual=page.get_by_role('dialog')
+        expect(manual.locator('[name=core_symbol_3]')).to_have_value('TOCI')
+        manual.get_by_role('button', name='Fermer').click()
+
         # Nouvelle SGI sur le même portefeuille ; zéro achat/dépôt, répartition globale inchangée.
         initial_total=page.locator('.total').text_content()
         original_color=page.locator('.allocation-legend li').filter(has_text='SNTS').first.locator('i').evaluate(
