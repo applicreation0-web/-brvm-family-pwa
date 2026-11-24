@@ -919,6 +919,8 @@
     const available=Math.floor(account.available);
     fail(Number.isSafeInteger(budget) && budget>0 && budget<=available,
       'Le budget doit être positif et inférieur ou égal aux espèces disponibles de cette SGI.');
+    const quoteChecked=copy(d);
+    quoteChecked.settings.staleDays=Math.min(1,d.settings.staleDays??1);
     const options=[
       {key:'prudente',label:'Prudente · 50 % du budget',factor:.5},
       {key:'progressive',label:'Progressive · 75 % du budget',factor:.75},
@@ -926,7 +928,7 @@
     ];
     const scenarios=options.map(option=>{
       const cap=Math.floor(budget*option.factor);
-      const plan=propose(d,{portfolioId,accountIds:[accountId],mode:'cibles',
+      const plan=propose(quoteChecked,{portfolioId,accountIds:[accountId],mode:'cibles',
         budget:cap,exceptional:true,verifiedOnly,now});
       const total=Math.round(plan.lines.reduce((n,l)=>n+l.total,0)*100)/100;
       const fees=Math.round(plan.lines.reduce((n,l)=>n+l.broker+l.other,0)*100)/100;
@@ -942,7 +944,7 @@
     const targets=Object.keys(portfolio.targets);
     const outOfDate=targets.filter(symbol=>{
       const q=d.quotes[symbol];
-      return !q || stale(q,d.settings.staleDays,now) ||
+      return !q || stale(q,quoteChecked.settings.staleDays,now) ||
         q.status==='suspended' || !['manual','official','provisional'].includes(q.basis);
     });
     return {portfolioId,accountId,budget,available,
