@@ -24,6 +24,7 @@
   const feeCategories={tenue:'Tenue de compte / garde',virement:'Virement / transfert',taxe:'Taxe distincte',autre:'Autres frais prélevés'};
   const pages={dashboard:['Vue d’ensemble','▦'],accounts:['Comptes et positions','▤'],invest:['Opérations','⇄'],
     events:['Dividendes et FCP','◈'],history:['Historique et analyses','◷'],settings:['Cibles et risques','⚙'],data:['Données et sauvegarde','⬡']};
+  const mainPages=['dashboard','accounts','invest','events','history'];
   let publicWatch={status:'chargement',checkedOn:null,items:[]};
   let store, record, db, calc, tab='dashboard', portfolioId='', busy=false, refreshing=false, plan=null, comparison=null, planInputs=null, importPreview=null;
   const resetKey=V.RESET_NOTICE+V.scope();
@@ -720,7 +721,7 @@
     if(!db) return;
     if(!calc.portfolios.some(p=>p.id===portfolioId)) portfolioId=calc.portfolios[0]?.id||'';
     if(sgiFilter && !calc.portfolios.find(p=>p.id===portfolioId)?.accounts.some(a=>a.institutionId===sgiFilter)) sgiFilter='';
-    $('#nav').innerHTML=Object.entries(pages).map(([key,[label,icon]])=>
+    $('#nav').innerHTML=mainPages.map(key=>[key,pages[key]]).map(([key,[label,icon]])=>
       `<button type="button" data-page="${key}" ${key===tab?'aria-current="page"':''}><span aria-hidden="true">${icon}</span>${label}</button>`).join('');
     $('#page-title').textContent=pages[tab][0];
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
@@ -1214,7 +1215,7 @@
             const symbol=F.normalizeSymbol(raw);
             if(!F.symbol(symbol)||raw!==symbol)
               throw Error('Symbole de l’action '+(i+1)+' invalide.');
-            if(!/^\\d+(?:\\.\\d{1,2})?$/.test(rawWeight))
+            if(!/^\d+(?:\.\d{1,2})?$/.test(rawWeight))
               throw Error('Pourcentage invalide pour '+symbol+' (maximum deux décimales).');
             const weight=Number(rawWeight)/100;
             if(weight<0||weight>1||Object.hasOwn(targets,symbol))
