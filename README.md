@@ -1,3 +1,19 @@
+# BRVM Family V3.6.2 — audit de résistance du CORE manuel
+
+## Contrôle qualité reproductible (GitHub Actions)
+- `npm test` : tests des positions, écritures, frais, cibles, sauvegardes et exclusions.
+- `tests/stress_core.test.js` : 1 200 éditions déterministes avec composition CORE de 1 à 12 actions, arrondis au centième, conservation bit-à-bit des comptes/ordres/positions/liquidités/justificatifs, deuxième portefeuille intact, validation JSON après chaque cycle.
+- Attaques d'entrée : totaux 99,99/100,01 %, zéros, décimales excessives, banques, FCP, émetteur déjà exclu, doublons et alias TTLC/TOCI, chaînes malformées ou injectées, liste trop longue, propriétaire/portefeuille non autorisé.
+- `tests/browser_e2e.py` : modification réelle au navigateur 360px, refus de saisies invalides, alias, export/import, sauvegarde ZIP, retours arrière, mode hors ligne, absence d'envoi des données privées, concurrence entre deux onglets avec rejet d'une révision ancienne.
+- `scripts/privacy_check.py` : contrôle strict des fichiers sources et de l'archive distribuée vide.
+- Application indépendante sur GitHub Pages ; compilation Android hors ligne non signée publiquement, pas d'accès aux clés privées.
+
+## Limites non considérées comme validées par cette release
+- Cette version stabilise l'interface manuelle ; ce n'est pas une certification 76/76 du mandat familial historique.
+- La signature Android privée et la synchronisation réelle entre utilisateurs ne sont pas livrées.
+- Les cotations BRVM ne deviennent pas automatiques faute de preuve d'autorisation de redistribution.
+- Modifier un CORE ne modifie **jamais** les actifs détenus ; un achat ou une vente doit être comptabilisé séparément, avec les frais réels.
+
 ## BRVM Family V3.6.1 — tableau de bord simplifié
 - Un seul accès visible « Modifier mes données et mes actions » ouvre les changements manuels : composition du CORE (symboles et poids), cours, données émetteur, fiches d'actions, JSON privé et sauvegardes.
 - Les actions CORE sont personnalisables par portefeuille : 1 à 12 symboles distincts, somme des cibles 100 %, secteur bancaire exclu. La modification ne crée aucun ordre, aucune vente, aucun dépôt et ne réécrit pas les positions historiques.
