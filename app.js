@@ -252,7 +252,7 @@
       '</div>'+
       '<h3>Actions ciblées du CORE</h3>'+
       form('manual-core', '<div class="manual-core-lines">'+stocks+'</div>'+
-        '<p class="quiet">Total obligatoire : 100 %. Laisser les deux cases de la dernière ligne vides pour ne pas ajouter de titre. Pour retirer une action, vider les deux cases de sa ligne et répartir son pourcentage sur les autres.</p>'+
+        '<p class="quiet">Total obligatoire : 100 %. Une ligne vide est ignorée. Pour remplacer une action, modifie son symbole ; pour la retirer, vide ses deux cases et répartis son pourcentage sur les autres. Les achats et ventes réels restent distincts.</p>'+
         '<label class="check"><input type="checkbox" name="confirmed" required> Je confirme : seules les cibles CORE changent, jamais mes positions réelles.</label>',
         'Enregistrer les actions du CORE',p.id)
     );
@@ -1117,30 +1117,13 @@
         }
         case 'manual-core': {
           if(!f.has('confirmed')) throw Error('Confirmez le changement des cibles.');
-          const source=db.portfolios.find(p=>p.id===id);
-          if(!source) throw Error('Portefeuille introuvable.');
-          const count=Object.keys(source.targets).length+(Object.keys(source.targets).length<12?1:0);
-          const targets=Object.create(null);
-          for(let i=0;i<count;i++) {
-            const raw=trim(f,'core_symbol_'+i).toUpperCase();
-            const rawWeight=trim(f,'core_weight_'+i);
-            if(!raw&&!rawWeight) continue;
-            const symbol=F.normalizeSymbol(raw);
-            if(!F.symbol(symbol)||raw!==symbol)
-              throw Error('Symbole de l’action '+(i+1)+' invalide.');
-            if(!/^\d+(?:\.\d{1,2})?$/.test(rawWeight))
-              throw Error('Pourcentage invalide pour '+symbol+' (maximum deux décimales).');
-            const weight=Number(rawWeight)/100;
-            if(weight<0||weight>1||Object.hasOwn(targets,symbol))
-              throw Error('Action en double ou pourcentage invalide : '+symbol);
-            targets[symbol]=weight;
-          }
-          if(!Object.keys(targets).length || Object.keys(targets).length>12 ||
-            Math.abs(Object.values(targets).reduce((a,b)=>a+b,0)-1)>0.000001)
-            throw Error('Les actions doivent représenter exactement 100 %.');
-          next=structuredClone(db);
-          next.portfolios.find(p=>p.id===id).targets={...targets};
-          F.validate(next);
+          const current=db.portfolios.find(p=>p.id===id);
+          if(!current) throw Error('Portefeuille introuvable.');
+          const count=Object.keys(current.targets).length+(Object.keys(current.targets).length<12?1:0);
+          const rows=Array.from({length:count},(_,i)=>({
+            symbol:trim(f,'core_symbol_'+i),weightPct:trim(f,'core_weight_'+i)
+          }));
+          next=F.updateCoreTargets(db,id,rows);
           plan=null;comparison=null;planInputs=null;
           message='Cibles CORE modifiées sur cet appareil. Positions et cash inchangés.';
           break;
