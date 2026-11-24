@@ -71,7 +71,8 @@ def check(first, second):
         upload(page, json.dumps(data, sort_keys=True).encode())
         expect(page.get_by_text('Aucune écriture ne sera ajoutée.')).to_be_visible()
         confirm_import(page)
-        expect(page.locator('.backup-banner')).to_be_visible()
+        # La saisie doit rester libre, sans sauvegarde mensuelle bloquante.
+        expect(page.locator('.backup-banner')).to_have_count(0)
         page.get_by_role('button', name='Modifier mes données et mes actions').click()
         page.get_by_role('dialog').get_by_role('button', name='Cours / prix').click()
         dialog=page.get_by_role('dialog')
@@ -79,33 +80,26 @@ def check(first, second):
         dialog.locator('[name=price]').fill('4000')
         dialog.locator('[name=source]').fill('Cotation fictive recette')
         dialog.get_by_role('button', name='Enregistrer le cours').click()
-        expect(dialog.get_by_text('Sauvegarde mensuelle obligatoire :')).to_be_visible()
-        dialog.get_by_role('button', name='Fermer').click()
+        expect(page.get_by_text('Cotation enregistrée.')).to_be_visible()
+        page.get_by_role('button', name='Modifier mes données et mes actions').click()
+        page.get_by_role('dialog').get_by_role('button', name='Sauvegardes').click()
         with page.expect_download() as backup_download:
-            page.locator('.backup-banner').get_by_role('button', name='Sauvegarder et vérifier').click()
+            page.get_by_role('button', name='Télécharger une sauvegarde ZIP (facultatif)').click()
         backup=backup_download.value.path().read_bytes()
         with zipfile.ZipFile(BytesIO(backup)) as archive:
             names=archive.namelist()
             assert len(names)==3
             assert 'BRVM_COMPLET.json' in names and 'MANIFESTE.json' in names
             assert json.loads(archive.read('BRVM_COMPLET.json'))['accounts'][0]['id']=='browser-only-a'
-        proof=page.get_by_role('dialog')
-        corrupted=bytearray(backup)
-        corrupted[40]^=1
-        proof.locator('#backup-verify').set_input_files({
-            'name':'BRVM_SAUVEGARDE_TEST.zip','mimeType':'application/zip','buffer':bytes(corrupted)})
-        expect(proof.get_by_text('Le fichier n’est pas identique au ZIP exporté.')).to_be_visible()
-        proof.locator('#backup-verify').set_input_files({
-            'name':'BRVM_SAUVEGARDE_TEST.zip','mimeType':'application/zip','buffer':backup})
-        expect(page.get_by_text('Sauvegarde du mois vérifiée.')).to_be_visible()
         expect(page.locator('.backup-banner')).to_have_count(0)
+        page.locator('#nav [data-page=dashboard]').press('Enter')
         zipcontext=browser.new_context()
         zip_page=zipcontext.new_page()
         zip_page.goto(second + '/')
         zip_page.locator('#import').set_input_files({
             'name':'BRVM_SAUVEGARDE_TEST.zip','mimeType':'application/zip','buffer':backup})
         confirm_import(zip_page, initialize=True)
-        expect(zip_page.locator('.backup-banner')).to_be_visible()
+        expect(zip_page.locator('.backup-banner')).to_have_count(0)
         zip_page.locator('#nav [data-page=accounts]').press('Enter')
         expect(zip_page.locator('article h2').filter(has_text='Compte fictif E2E')).to_be_visible()
         zipcontext.close()
@@ -195,6 +189,7 @@ def check(first, second):
         sale.locator('[name=confirmed]').check()
         expect(sale.locator('[data-trade-total]')).to_contain_text('7')
         sale.get_by_role('button', name='Comptabiliser').click()
+        sale.get_by_role('button', name='Confirmer et comptabiliser').click()
         expect(sale).not_to_be_visible()
         page.get_by_role('button', name='Acheter', exact=True).click()
         buy=page.get_by_role('dialog')
@@ -207,6 +202,7 @@ def check(first, second):
         buy.locator('[name=brokerRef]').fill('BROWSER-BUY-1')
         buy.locator('[name=confirmed]').check()
         buy.get_by_role('button', name='Comptabiliser').click()
+        buy.get_by_role('button', name='Confirmer et comptabiliser').click()
         expect(buy).not_to_be_visible()
         # Les versements et frais ont un point d'accès direct, sans deuxième écran achat/vente.
         page.locator('#nav [data-page=invest]').press('Enter')
@@ -222,6 +218,7 @@ def check(first, second):
         deposit.locator('[name=brokerRef]').fill('DEP-FICTIVE-01')
         deposit.locator('[name=confirmed]').check()
         deposit.get_by_role('button', name='Comptabiliser').click()
+        deposit.get_by_role('button', name='Confirmer et comptabiliser').click()
         expect(deposit).not_to_be_visible()
         page.locator('.operations-actions').get_by_role('button', name='Retirer').click()
         withdraw=page.get_by_role('dialog')
@@ -229,6 +226,7 @@ def check(first, second):
         withdraw.locator('[name=brokerRef]').fill('RET-FICTIVE-01')
         withdraw.locator('[name=confirmed]').check()
         withdraw.get_by_role('button', name='Comptabiliser').click()
+        withdraw.get_by_role('button', name='Confirmer et comptabiliser').click()
         expect(withdraw).not_to_be_visible()
         page.locator('.operations-secondary').first.evaluate('(el)=>el.open=true')
         page.get_by_role('button', name='Frais du compte').click()
@@ -238,6 +236,7 @@ def check(first, second):
         fee.locator('[name=brokerRef]').fill('FRAIS-FICTIVE-01')
         fee.locator('[name=confirmed]').check()
         fee.get_by_role('button', name='Comptabiliser').click()
+        fee.get_by_role('button', name='Confirmer et comptabiliser').click()
         expect(fee).not_to_be_visible()
         page.locator('.operations-secondary').first.evaluate('(el)=>el.open=true')
         expect(page.get_by_role('button', name='Frais du compte')).to_be_visible()
@@ -399,11 +398,11 @@ def check(first, second):
         other.get_by_role('button', name='Modifier mes données et mes actions').click()
         other.get_by_role('dialog').get_by_role('button', name='Sauvegardes').click()
         with other.expect_download() as action_backup_download:
-            other.get_by_role('button', name='Sauvegarde mensuelle JSON · À effectuer').click()
+            other.get_by_role('button', name='Télécharger une sauvegarde ZIP (facultatif)').click()
         action_backup=action_backup_download.value.path().read_bytes()
-        other.get_by_role('dialog').locator('#backup-verify').set_input_files({
-            'name':'BRVM_MONTHLY_ACTION_E2E.zip','mimeType':'application/zip','buffer':action_backup})
-        expect(other.get_by_text('Sauvegarde du mois vérifiée.')).to_be_visible()
+        with zipfile.ZipFile(BytesIO(action_backup)) as archive:
+            assert 'BRVM_COMPLET.json' in archive.namelist()
+        expect(other.locator('.backup-banner')).to_have_count(0)
         other.locator('#nav [data-page=events]').press('Enter')
         other.get_by_role('button', name='Saisir un événement').click()
         action_dialog=other.get_by_role('dialog')
@@ -413,6 +412,7 @@ def check(first, second):
         action_dialog.locator('[name=source]').fill('Avis fictif fractionnement')
         action_dialog.locator('[name=confirmed]').check()
         action_dialog.get_by_role('button', name='Comptabiliser').click()
+        action_dialog.get_by_role('button', name='Confirmer et comptabiliser').click()
         try:
             expect(action_dialog).not_to_be_visible(timeout=12000)
         except AssertionError:
@@ -432,6 +432,7 @@ def check(first, second):
         action_dialog.locator('[name=dividendStatementRef]').fill('AVIS-E2E-70')
         action_dialog.locator('[name=confirmed]').check()
         action_dialog.get_by_role('button', name='Comptabiliser').click()
+        action_dialog.get_by_role('button', name='Confirmer et comptabiliser').click()
         try:
             expect(action_dialog).not_to_be_visible(timeout=12000)
         except AssertionError:
