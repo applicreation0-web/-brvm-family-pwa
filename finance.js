@@ -906,6 +906,51 @@
           current:a.total,forecast:a.total+funding[a.id]-fees,fees};
       })};
   }
+
+  // Scenarios are purely read-only and never create orders, debit cash or
+  // account for an expected execution. Only actually available cash is usable.
+  function purchaseScenarios(d,{portfolioId,accountId,budget,verifiedOnly=false,now=today()}) {
+    const computed=calculate(d);
+    const portfolio=computed.portfolios.find(p=>p.id===portfolioId);
+    const account=computed.accounts.find(a=>a.id===accountId);
+    fail(portfolio && account && account.portfolioId===portfolioId &&
+      account.currency==='XOF' && !isArchived(d,d.accounts.find(a=>a.id===accountId)),
+      'Choisir un compte actif XOF dans le portefeuille.');
+    const available=Math.floor(account.available);
+    fail(Number.isSafeInteger(budget) && budget>0 && budget<=available,
+      'Le budget doit être positif et inférieur ou égal aux espèces disponibles de cette SGI.');
+    const options=[
+      {key:'prudente',label:'Prudente · 50 % du budget',factor:.5},
+      {key:'progressive',label:'Progressive · 75 % du budget',factor:.75},
+      {key:'complete',label:'Investir jusqu’à 100 % du budget',factor:1}
+    ];
+    const scenarios=options.map(option=>{
+      const cap=Math.floor(budget*option.factor);
+      const plan=propose(d,{portfolioId,accountIds:[accountId],mode:'cibles',
+        budget:cap,exceptional:true,verifiedOnly,now});
+      const total=Math.round(plan.lines.reduce((n,l)=>n+l.total,0)*100)/100;
+      const fees=Math.round(plan.lines.reduce((n,l)=>n+l.broker+l.other,0)*100)/100;
+      fail(total<=cap+.000001 && total<=available+.000001 &&
+        plan.lines.every(l=>l.accountId===accountId && Number.isSafeInteger(l.qty) && l.qty>0),
+        'Simulation non conforme au budget disponible : aucune proposition ne sera affichée.');
+      return {key:option.key,label:option.label,cap,spent:total,fees,
+        cashAfter:Math.round((account.available-total)*100)/100,
+        availableRemainder:Math.round((budget-total)*100)/100,
+        lines:plan.lines,ignored:plan.ignored,plan,
+        explanation:'Répartition indicative vers les titres CORE sous-pondérés, sans exécution.'};
+    });
+    const targets=Object.keys(portfolio.targets);
+    const outOfDate=targets.filter(symbol=>{
+      const q=d.quotes[symbol];
+      return !q || stale(q,d.settings.staleDays,now) ||
+        q.status==='suspended' || !['manual','official','provisional'].includes(q.basis);
+    });
+    return {portfolioId,accountId,budget,available,
+      accountCash:account.cash,accountReserved:account.reserved,
+      quoteDate:targets.map(s=>d.quotes[s]?.date).filter(Boolean).sort().at(-1)||null,
+      outOfDate,scenarios};
+  }
+
   // Retirer une saisie incorrecte uniquement si le livre recalculé reste valide.
   // L'opération originale demeure dans une piste d'audit privée, hors du
   // journal visible et sans aucun effet sur le calcul des soldes/positions.
@@ -947,6 +992,6 @@
     calculate(next);
     return next;
   }
-  return {schema,empty,migrate,validate,calculate,record,removeJournalEntry,removeArchiveEntry,reconcileOpening,reviseOpening,propose,isArchived,createPlan,orderTransition,
+  return {schema,empty,migrate,validate,calculate,record,removeJournalEntry,removeArchiveEntry,reconcileOpening,reviseOpening,propose,purchaseScenarios,isArchived,createPlan,orderTransition,
     quoteUpdates,stale,validateAttachment,currencies,fxRate,changeRate,screening,normalizeSymbol,eligibleCoreSymbol,updateCoreTargets,id,today,cent,date,symbol,kinds,statuses,isFund,tradeAmounts,equate};
 });
