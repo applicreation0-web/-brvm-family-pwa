@@ -906,6 +906,47 @@
           current:a.total,forecast:a.total+funding[a.id]-fees,fees};
       })};
   }
-  return {schema,empty,migrate,validate,calculate,record,reconcileOpening,reviseOpening,propose,isArchived,createPlan,orderTransition,
+  // Retirer une saisie incorrecte uniquement si le livre recalculé reste valide.
+  // L'opération originale demeure dans une piste d'audit privée, hors du
+  // journal visible et sans aucun effet sur le calcul des soldes/positions.
+  function removeJournalEntry(d, transactionId, reason) {
+    fail(text(reason,5,200),'Préciser un motif de retrait (5 caractères minimum).');
+    const original=d.transactions.find(t=>t.id===transactionId);
+    fail(original,'Écriture introuvable.');
+    fail(!['SPLIT','CORRECTION'].includes(original.type),
+      'Fractionnement ou correction : retrait direct interdit pour préserver les positions. Utilisez une rectification documentée.');
+    fail(!original.orderId && !original.eventId,
+      'Cette écriture est liée à un ordre ou un dividende : rapprochez le dossier avant retrait.');
+    fail(!d.transactions.some(t=>t.corrects===transactionId || t.reinvests===transactionId),
+      'Cette écriture a une rectification ou un réinvestissement dépendant : le retrait direct est interdit.');
+    calculate(d);
+    const next=copy(d);
+    next.transactions=next.transactions.filter(t=>t.id!==transactionId);
+    try {calculate(next);}
+    catch(err) {throw Error('Retrait refusé : une écriture suivante, un solde ou une position en dépend. '+err.message);}
+    next.history.push({kind:'AUDIT_RETRAIT',type:'AUDIT_RETRAIT',id:id(),
+      accountId:original.accountId,date:today(),removedAt:new Date().toISOString(),
+      reference:original.brokerRef,reason,original:copy(original)});
+    calculate(next);
+    return next;
+  }
+  // Les anciennes archives sont déjà intégrées dans les soldes d'ouverture :
+  // les retirer de l'affichage ne doit jamais recalculer un faux versement.
+  function removeArchiveEntry(d,index,reason) {
+    fail(text(reason,5,200),'Préciser un motif de retrait (5 caractères minimum).');
+    fail(Number.isSafeInteger(index)&&index>=0&&index<d.history.length,'Archive introuvable.');
+    const original=d.history[index];
+    fail(original?.kind!=='AUDIT_RETRAIT' && original?.type!=='SPLIT',
+      'Cette archive constitue une piste d’audit ou un fractionnement et ne peut pas être retirée.');
+    calculate(d);
+    const next=copy(d);
+    next.history.splice(index,1);
+    next.history.push({kind:'AUDIT_RETRAIT',type:'AUDIT_RETRAIT',id:id(),
+      accountId:original.accountId,date:today(),removedAt:new Date().toISOString(),
+      reference:original.reference||original.brokerRef||'',reason,original:copy(original)});
+    calculate(next);
+    return next;
+  }
+  return {schema,empty,migrate,validate,calculate,record,removeJournalEntry,removeArchiveEntry,reconcileOpening,reviseOpening,propose,isArchived,createPlan,orderTransition,
     quoteUpdates,stale,validateAttachment,currencies,fxRate,changeRate,screening,normalizeSymbol,eligibleCoreSymbol,updateCoreTargets,id,today,cent,date,symbol,kinds,statuses,isFund,tradeAmounts,equate};
 });
