@@ -394,7 +394,7 @@
       </fieldset>
       <fieldset><legend>2. Plafond ponctuel</legend>
       ${field('budget','Budget maximum à dépenser (FCFA)',integer('budget',inp.budget??available))}
-      <p class="quiet">Le plafond est limité aux espèces réellement présentes sur les comptes sélectionnés. Pour investir un nouveau versement, enregistrez d'abord son crédit confirmé.</p>
+      <p class="quiet">Le total est réparti équitablement entre les SGI, sans jamais dépasser le cash disponible sur chacune. L’excédent éventuel va à une SGI ayant encore des espèces. Les actions entières et les frais peuvent laisser un solde non investi. Pour un nouveau versement, enregistrez d’abord son crédit confirmé.</p>
       </fieldset>
       <label class="check"><input type="checkbox" name="verifiedOnly" ${inp.verifiedOnly?'checked':''}> Réserver la simulation aux titres dont la conformité est documentée</label>
       <p class="quiet">L'algorithme cible les titres CORE actuellement sous-pondérés. Il tient compte des prix datés, des actions entières et des frais estimés par SGI. Aucune vente n'est simulée automatiquement.</p>
@@ -407,14 +407,14 @@
       <p class="quiet">Les avis confirmés font foi : courtage (plafond 1 %), autres frais et impôts sur les achats/ventes. Les frais bancaires ou de tenue de compte non inclus dans un avis s'enregistrent séparément.</p>`;
   }
   function proposal(p) {
-    const rows=p.accounts.map(a=>[esc(accName(a.id)),fc(a.current),fc(a.cash),fc(a.fees),fc(a.cashRemaining),fc(a.forecast)]);
+    const rows=p.accounts.map(a=>[esc(accName(a.id)),fc(a.cash),fc(a.budgetCap),fc(a.debit),fc(a.fees),fc(a.cashRemaining)]);
     const fees=p.lines.reduce((n,l)=>n+l.broker+l.other,0);
     const spent=p.lines.reduce((n,l)=>n+l.total,0);
     const coreRows=Object.keys(p.targets).map(s=>[esc(s)+' · '+esc(db.instruments[s]?.label||E.names[s]||''),pct(p.before[s]),pct(p.targets[s]),pct(p.after[s]),pct(p.after[s]-p.targets[s])]);
     return pane('Achats ponctuels simulés',
-      `<div class="account-total">${tag('Simulation sans exécution','ok')}<strong>${fc(spent)}</strong><span>Frais estimés inclus : ${fc(fees)}</span></div>
+      `<div class="account-total">${tag('Simulation sans exécution','ok')}<strong>${fc(spent)} / budget ${fc(p.budget)}</strong><span>Frais estimés inclus : ${fc(fees)} · Somme non dépensée : ${fc(Math.max(0,p.budget-spent))}</span></div>
       <p class="quiet">Écart absolu aux cibles : ${pct(p.deviation.before)} avant → ${pct(p.deviation.after)} après. La valeur ne doit pas augmenter fictivement du montant dépensé : seul le coût des frais la réduit.</p>
-      ${table(['Compte','Valeur actuelle','Cash disponible','Frais prévus','Cash après','Valeur après frais'],rows)}
+      ${table(['Compte SGI','Cash réellement disponible','Plafond SGI','Achats frais compris','Frais estimés','Cash restant'],rows)}
       ${table(['Titre / compte','Qté à acheter','Cours daté','Courtage','Autres frais','Débit total estimé'],p.lines.map(l=>[
         `<b>${esc(l.symbol)}</b><br><small>${esc(accName(l.accountId))}</small>`,fmt.format(l.qty),
         `${fc(l.price)}<br><small>${showDate(l.quote.date)} · ${esc(l.quote.source)}</small>`,
