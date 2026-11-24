@@ -828,6 +828,41 @@
     calculate(next); // Full ledger and referential invariants; no commit on failure.
     return next;
   }
+  // A portfolio-wide cash figure must never be used as if it were available
+  // at every broker. Water-fill a budget across SGIs, then their own accounts.
+  // No cross-broker implicit transfers; money stays where it is deposited.
+  function fairCaps(rows,amount) {
+    const output=Object.fromEntries(rows.map(r=>[r.id,0]));
+    let remaining=amount;
+    let active=rows.slice().sort((a,b)=>a.id.localeCompare(b.id));
+    while(remaining>0 && active.length) {
+      const base=Math.floor(remaining/active.length),extra=remaining%active.length;
+      let used=0;
+      for(let i=0;i<active.length;i++) {
+        const row=active[i],part=base+(i<extra?1:0);
+        const take=Math.min(part,row.cap-output[row.id]);
+        output[row.id]+=take;used+=take;
+      }
+      if(used===0) break;
+      remaining-=used;
+      active=active.filter(row=>output[row.id]<row.cap);
+    }
+    return output;
+  }
+  function accountSpendingCaps(accounts,budget) {
+    const grouped=new Map();
+    for(const a of accounts) {
+      const group=grouped.get(a.institutionId)||[];
+      group.push(a);grouped.set(a.institutionId,group);
+    }
+    const groups=[...grouped].map(([id,rows])=>({
+      id,cap:rows.reduce((sum,a)=>sum+Math.floor(a.available),0)
+    }));
+    const groupBudgets=fairCaps(groups,budget);
+    return Object.fromEntries([...grouped].flatMap(([id,rows])=>
+      Object.entries(fairCaps(rows.map(a=>({id:a.id,cap:Math.floor(a.available)})),groupBudgets[id]))));
+  }
+
   function propose(d,{portfolioId,accountIds,mode='cibles',budget=0,manual={},exceptional=false,verifiedOnly=false,now=today()}) {
     const p=calculate(d).portfolios.find(x=>x.id===portfolioId);
     fail(p && ['cibles','mensuel','equilibre','equilibre-sgi','egalisation','manuel'].includes(mode),'Portefeuille ou mode inconnu.');
@@ -844,9 +879,11 @@
     const planned=Object.values(funding).reduce((s,x)=>s+x,0);
     fail(Object.values(funding).every(x=>num(x)) && (mode!=='manuel'||planned<=budget),'Versements projetés supérieurs au budget.');
     const balances=Object.fromEntries(accounts.map(a=>[a.id,a.available]));
-    const limits=Object.fromEntries(accounts.map(a=>[a.id,Math.floor(a.available)]));
-    const spendable=Object.values(limits).reduce((s,x)=>s+x,0);
-    let remaining=exceptional || mode!=='mensuel' ? Math.min(spendable,budget) : spendable;
+    const spendable=accounts.reduce((sum,a)=>sum+Math.floor(a.available),0);
+    fail(budget<=spendable,'Budget supérieur au cash disponible sur les SGI sélectionnées. Réduisez la somme ou enregistrez le versement confirmé.');
+    const accountBudgets=accountSpendingCaps(accounts,mode==='mensuel'&&!exceptional?spendable:budget);
+    const limits={...accountBudgets};
+    let remaining=mode==='mensuel'&&!exceptional?spendable:budget;
     if(mode==='cibles' && p.accounts.some(a=>coreSymbols.some(s=>(a.positions[s]?.qty||0)>0 && !(a.positions[s]?.price>0))))
       throw Error('Cours manquant sur un titre CORE détenu : renseignez les cours avant toute proposition de rééquilibrage.');
     const initial=Object.fromEntries(coreSymbols.map(s=>[s,p.accounts.reduce((n,a)=>n+(a.positions[s]?.market||0),0)]));
@@ -895,10 +932,18 @@
     };
     const before=weights(initial), after=weights(values);
     const feesBy=Object.fromEntries(accounts.map(a=>[a.id,0]));
-    for(const l of lines.values()) feesBy[l.accountId]+=l.broker+l.other;
+    const debitBy=Object.fromEntries(accounts.map(a=>[a.id,0]));
+    for(const l of lines.values()) {
+      feesBy[l.accountId]+=l.broker+l.other;
+      debitBy[l.accountId]+=l.total;
+    }
+    fail(accounts.every(a=>debitBy[a.id]<=accountBudgets[a.id]+0.001 &&
+      debitBy[a.id]<=a.available+0.001) &&
+      Object.values(debitBy).reduce((x,y)=>x+y,0)<=budget+0.001,
+      'Dépassement de budget SGI ou compte détecté : proposition refusée.');
     if(equalize) funding=allocate(accounts.map(a=>({...a,total:a.total-feesBy[a.id]})),budget);
     const deviation=v=>coreSymbols.reduce((n,s)=>n+Math.abs(v[s]-p.targets[s]),0)/2;
-    return {portfolioId,mode,budget,funding,planned,lines:[...lines.values()],before,after,targets:p.targets,
+    return {portfolioId,mode,budget,funding,planned,accountBudgets,debitBy,lines:[...lines.values()],before,after,targets:p.targets,
       deviation:{before:deviation(before),after:deviation(after)},ignored,
       telecom:(p.targets.SNTS||0)+(p.targets.ORAC||0),
       accounts:accounts.map(a=>{
@@ -906,6 +951,7 @@
         const fees=own.reduce((n,l)=>n+l.broker+l.other,0);
         const cost=own.reduce((n,l)=>n+l.total,0);
         return {id:a.id,cash:balances[a.id],cashRemaining:Math.round((balances[a.id]-cost)*100)/100,
+          budgetCap:accountBudgets[a.id],debit:cost,
           current:a.total,forecast:a.total+funding[a.id]-fees,fees};
       })};
   }
