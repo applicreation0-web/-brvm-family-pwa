@@ -249,10 +249,24 @@
         if(previous && (!shared.has(key) || !same(previous,item))) return null;
       }
     }
-    // A split transaction is globally replayed into another account by the
-    // underlying engine. Do not bypass this rule; audited opening snapshots
-    // can represent earlier splits in the non-replayed history instead.
-    if([...current.transactions,...incoming.transactions].some(t=>t.type==='SPLIT')) return null;
+    // A corporate split is replayed per account. Two independent portfolio
+    // snapshots may be combined only when they agree on all the global
+    // symbol/date/ratio events, while their account transaction IDs are disjoint.
+    // The price-adjustment pass uses global symbol/date entries. Never silently
+    // combine inconsistent event histories or apply a split twice.
+    const splitEvents=data=>{
+      const events=new Map();
+      for(const t of data.transactions.filter(t=>t.type==='SPLIT')) {
+        const key=JSON.stringify([t.symbol,t.date]);
+        const ratio=JSON.stringify([t.ratioFrom,t.ratioTo]);
+        if(events.has(key) && events.get(key)!==ratio) return null;
+        events.set(key,ratio);
+      }
+      return events;
+    };
+    const aSplits=splitEvents(current),bSplits=splitEvents(incoming);
+    if(!aSplits||!bSplits||aSplits.size!==bSplits.size ||
+      [...aSplits].some(([k,ratio])=>bSplits.get(k)!==ratio)) return null;
     const combined=structuredClone(current);
     for(const key of entities) {
       if(shared.has(key)) {
@@ -395,6 +409,94 @@
       throw Error('Répertoire ZIP absent ou invalide.');
     return files;
   }
+  // Import ZIPs made by other tools (DEFLATE) as well as BRVM's own STORE-only backups.
+  // Each payload is length- and CRC-checked before a JSON is exposed to the importer.
+  async function readZipFlexible(bytes) {
+    if(!(bytes instanceof Uint8Array)||!bytes.length||bytes.length>128*1024*1024)
+      throw Error('Archive ZIP invalide ou supérieure à 128 Mio.');
+    const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+    const decoder=new TextDecoder('utf-8',{fatal:true});
+    const files=new Map();
+    let offset=0,total=0;
+    while(offset+30<=bytes.length && view.getUint32(offset,true)===0x04034b50) {
+      const flags=view.getUint16(offset+6,true),method=view.getUint16(offset+8,true);
+      const expected=view.getUint32(offset+14,true),compressed=view.getUint32(offset+18,true);
+      const size=view.getUint32(offset+22,true),nameLength=view.getUint16(offset+26,true);
+      const extra=view.getUint16(offset+28,true);
+      if((flags&9)||(method!==0&&method!==8)||size>MAX||files.size>=20||!nameLength)
+        throw Error('ZIP non pris en charge ou incomplet.');
+      total+=size;
+      if(total>128*1024*1024) throw Error('Contenu ZIP trop volumineux.');
+      const start=offset+30+nameLength+extra,end=start+compressed;
+      if(start>bytes.length||end>bytes.length||end<=offset)
+        throw Error('Fichier ZIP tronqué.');
+      const name=decoder.decode(bytes.subarray(offset+30,offset+30+nameLength));
+      if(!/^[A-Za-z0-9_./-]+\.json$/.test(name)||name.includes('..')||files.has(name))
+        throw Error('Nom ou doublon de fichier dans le ZIP.');
+      let content;
+      if(method===0) {
+        if(compressed!==size) throw Error('Taille ZIP incohérente.');
+        content=bytes.subarray(start,end);
+      } else {
+        if(typeof DecompressionStream!=='function')
+          throw Error('La décompression ZIP n’est pas disponible sur cet appareil.');
+        const stream=new Blob([bytes.subarray(start,end)]).stream()
+          .pipeThrough(new DecompressionStream('deflate-raw'));
+        const reader=stream.getReader(),chunks=[];
+        let length=0;
+        try {
+          while(true) {
+            const {value,done}=await reader.read();
+            if(done) break;
+            length+=value.length;
+            if(length>size || length>MAX) throw Error('Taille ZIP décompressée invalide.');
+            chunks.push(value);
+          }
+        } catch(error) {
+          await reader.cancel().catch(()=>{});
+          throw error;
+        }
+        if(length!==size) throw Error('Taille ZIP décompressée invalide.');
+        content=new Uint8Array(length);
+        let cursor=0;
+        for(const chunk of chunks) {content.set(chunk,cursor);cursor+=chunk.length;}
+      }
+      if(crc32(content)!==expected) throw Error('Intégrité ZIP incorrecte (CRC32).');
+      files.set(name,decoder.decode(content));
+      offset=end;
+    }
+    if(files.size===0||offset+4>bytes.length||view.getUint32(offset,true)!==0x02014b50)
+      throw Error('Répertoire ZIP absent ou invalide.');
+    return files;
+  }
+  // A collection of single-account snapshots is not a monthly BRVM archive.
+  // Check every member and reconcile the global corporate-action calendar;
+  // do not silently overwrite or duplicate any owner, account or transaction.
+  function mergeAccountArchive(files) {
+    if(!(files instanceof Map)||files.size<2||files.size>20||
+      files.has('BRVM_COMPLET.json')||files.has('MANIFESTE.json'))
+      throw Error('Le ZIP ne contient pas une collection de comptes BRVM valide.');
+    let combined=null;
+    for(const [name,content] of files) {
+      let parsed;
+      try {parsed=JSON.parse(content);}
+      catch {throw Error('JSON illisible dans le ZIP : '+name);}
+      const d=inspect(parsed);
+      if(d.accounts.length!==1||d.portfolios.length!==1||d.owners.length!==1)
+        throw Error('Chaque JSON du ZIP doit représenter un seul compte : '+name);
+      if(d.accounts[0].portfolioId!==d.portfolios[0].id)
+        throw Error('Compte sans portefeuille dans : '+name);
+      if(!combined) combined=d;
+      else {
+        const merged=merge(combined,d);
+        if(!merged) throw Error('Impossible de fusionner '+name+' : doublon, divergence ou fractionnement incompatible.');
+        combined=merged;
+      }
+    }
+    inspect(combined);
+    return combined;
+  }
+
   function monthlyBundle(data,now=new Date()) {
     F.calculate(data);
     if(!data.accounts.length) throw Error('Aucun compte à sauvegarder.');
@@ -423,5 +525,5 @@
   }
 
   return {start,open,encrypt,decrypt,inspect,legacyData,removeLegacy,same,merge,scope,RESET_NOTICE,FORMAT,MAX,
-    monthKey,backupDue,accountSnapshot,zipFiles,readZip,monthlyBundle,sha256};
+    monthKey,backupDue,accountSnapshot,zipFiles,readZip,readZipFlexible,mergeAccountArchive,monthlyBundle,sha256};
 });
