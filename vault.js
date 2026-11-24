@@ -477,6 +477,7 @@
       files.has('BRVM_COMPLET.json')||files.has('MANIFESTE.json'))
       throw Error('Le ZIP ne contient pas une collection de comptes BRVM valide.');
     let combined=null;
+    const seenAccounts=new Set();
     for(const [name,content] of files) {
       let parsed;
       try {parsed=JSON.parse(content);}
@@ -486,6 +487,8 @@
         throw Error('Chaque JSON du ZIP doit représenter un seul compte : '+name);
       if(d.accounts[0].portfolioId!==d.portfolios[0].id)
         throw Error('Compte sans portefeuille dans : '+name);
+      if(seenAccounts.has(d.accounts[0].id)) throw Error('Compte en doublon dans le ZIP : '+name);
+      seenAccounts.add(d.accounts[0].id);
       if(!combined) combined=d;
       else {
         const merged=merge(combined,d);
