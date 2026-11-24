@@ -140,8 +140,12 @@
     for (const x of [...d.owners,...d.portfolios,...d.institutions]) fail(text(x.label), 'Nom requis.');
     for (const p of d.portfolios) {
       fail(index.owners.has(p.ownerId), 'Propriétaire inconnu.');
-      fail(p.targets && E.symbols.every(s => num(p.targets[s]) && p.targets[s]<=1) &&
-        Math.abs(E.symbols.reduce((n,s)=>n+p.targets[s],0)-1)<0.000001, 'Les cibles doivent totaliser 100 %.');
+      fail(p.targets && typeof p.targets==='object' && !Array.isArray(p.targets) &&
+        Object.keys(p.targets).length>=1 && Object.keys(p.targets).length<=12 &&
+        Object.entries(p.targets).every(([s,v])=>symbol(s) && s===normalizeSymbol(s) &&
+          !banks.has(s) && num(v) && v<=1) &&
+        Math.abs(Object.values(p.targets).reduce((n,v)=>n+v,0)-1)<0.000001,
+        'Actions CORE invalides, exclues, en doublon ou pondérations différentes de 100 %.');
     }
     for (const a of d.accounts) {
       fail(index.portfolios.has(a.portfolioId) && index.institutions.has(a.institutionId), 'Compte orphelin.');
@@ -778,6 +782,7 @@
   function propose(d,{portfolioId,accountIds,mode='cibles',budget=0,manual={},exceptional=false,verifiedOnly=false,now=today()}) {
     const p=calculate(d).portfolios.find(x=>x.id===portfolioId);
     fail(p && ['cibles','mensuel','equilibre','equilibre-sgi','egalisation','manuel'].includes(mode),'Portefeuille ou mode inconnu.');
+    const coreSymbols=Object.keys(p.targets);
     const requested=new Set(accountIds), accounts=p.accounts.filter(a=>requested.has(a.id) && a.currency==='XOF' && !isArchived(d,a));
     fail(accounts.length===requested.size && accounts.length>0,'Sélectionner des comptes XOF actifs du même portefeuille.');
     fail(Number.isSafeInteger(budget) && budget>=0,'Budget entier en FCFA obligatoire.');
@@ -793,11 +798,11 @@
     const limits=Object.fromEntries(accounts.map(a=>[a.id,Math.floor(a.available)]));
     const spendable=Object.values(limits).reduce((s,x)=>s+x,0);
     let remaining=exceptional || mode!=='mensuel' ? Math.min(spendable,budget) : spendable;
-    if(mode==='cibles' && p.accounts.some(a=>E.symbols.some(s=>(a.positions[s]?.qty||0)>0 && !(a.positions[s]?.price>0))))
+    if(mode==='cibles' && p.accounts.some(a=>coreSymbols.some(s=>(a.positions[s]?.qty||0)>0 && !(a.positions[s]?.price>0))))
       throw Error('Cours manquant sur un titre CORE détenu : renseignez les cours avant toute proposition de rééquilibrage.');
-    const initial=Object.fromEntries(E.symbols.map(s=>[s,p.accounts.reduce((n,a)=>n+(a.positions[s]?.market||0),0)]));
+    const initial=Object.fromEntries(coreSymbols.map(s=>[s,p.accounts.reduce((n,a)=>n+(a.positions[s]?.market||0),0)]));
     const values={...initial}, lines=new Map(), ignored=[];
-    const eligible=E.symbols.filter(s=>{
+    const eligible=coreSymbols.filter(s=>{
       const q=d.quotes[s];
       const valid=p.targets[s]>0 && q && !stale(q,d.settings.staleDays,now) &&
         (!q.status || q.status==='active') && ['manual','official','provisional'].includes(q.basis) &&
@@ -808,7 +813,7 @@
     });
     const base=Object.values(initial).reduce((s,x)=>s+x,0);
     const intended=base+remaining;
-    const goals=Object.fromEntries(E.symbols.map(s=>[s,p.targets[s]*intended]));
+    const goals=Object.fromEntries(coreSymbols.map(s=>[s,p.targets[s]*intended]));
     // Greedy discret sur le déficit, allocation par lots quand le prix est faible.
     while(remaining>0) {
       let best;
@@ -837,16 +842,16 @@
     }
     const weights=v=>{
       const total=Object.values(v).reduce((n,x)=>n+x,0);
-      return Object.fromEntries(E.symbols.map(s=>[s,total?v[s]/total:0]));
+      return Object.fromEntries(coreSymbols.map(s=>[s,total?v[s]/total:0]));
     };
     const before=weights(initial), after=weights(values);
     const feesBy=Object.fromEntries(accounts.map(a=>[a.id,0]));
     for(const l of lines.values()) feesBy[l.accountId]+=l.broker+l.other;
     if(equalize) funding=allocate(accounts.map(a=>({...a,total:a.total-feesBy[a.id]})),budget);
-    const deviation=v=>E.symbols.reduce((n,s)=>n+Math.abs(v[s]-p.targets[s]),0)/2;
+    const deviation=v=>coreSymbols.reduce((n,s)=>n+Math.abs(v[s]-p.targets[s]),0)/2;
     return {portfolioId,mode,budget,funding,planned,lines:[...lines.values()],before,after,targets:p.targets,
       deviation:{before:deviation(before),after:deviation(after)},ignored,
-      telecom:p.targets.SNTS+p.targets.ORAC,
+      telecom:(p.targets.SNTS||0)+(p.targets.ORAC||0),
       accounts:accounts.map(a=>{
         const own=[...lines.values()].filter(l=>l.accountId===a.id);
         const fees=own.reduce((n,l)=>n+l.broker+l.other,0);
