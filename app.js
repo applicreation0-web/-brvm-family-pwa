@@ -241,7 +241,7 @@
       field('core_symbol_'+i,'Action '+(i+1)+' · symbole',
         input('core_symbol_'+i,symbol,'text','maxlength="18" autocapitalize="characters" placeholder="Ex. SNTS"'))+
       field('core_weight_'+i,'Cible %',
-        input('core_weight_'+i,symbol?Math.round(target*10000)/100:'','number','step="0.01" min="0" max="100" placeholder="0"))+
+        input('core_weight_'+i,symbol?Math.round(target*10000)/100:'','number','step="0.01" min="0" max="100" placeholder="0"'))+
       '</div>').join('');
     modal('Modifier mes données et mes actions',
       '<p class="quiet">Tu peux changer les actions du CORE, leurs pourcentages et les données de marché. Aucun achat, vente, solde ou historique n’est modifié par un changement de cibles.</p>'+
