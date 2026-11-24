@@ -337,7 +337,9 @@
       <p class="quiet">Les avis confirmés font foi : courtage (plafond 1 %), autres frais et impôts sur les achats/ventes. Les frais bancaires ou de tenue de compte non inclus dans un avis s'enregistrent séparément.</p>`;
   }
   // The guided buy flow is a calculator, not a trade execution or brokerage connection.
-  function purchaseGuide(preselected) {
+  async function purchaseGuide(preselected) {
+    // If and only if an authorized quote feed is configured, update before any recommendation.
+    if(navigator.onLine && await Q.feedEnabled()) await refresh(true);
     const p=getPortfolio();
     if(!p) throw Error('Choisissez un portefeuille.');
     const list=activeAccounts().filter(a=>a.portfolioId===p.id&&a.currency==='XOF');
@@ -923,8 +925,8 @@
         case 'transaction': transaction(id||'DEPOSIT'); break;
         case 'open-planner': goTo('invest');$('.operations-planner').open=true;$('.operations-planner').scrollIntoView({block:'start'});break;
         case 'open-orders': goTo('invest');$('.operations-orders').open=true;$('.operations-orders').scrollIntoView({block:'start'});break;
-        case 'trade-buy': purchaseGuide();break;
-        case 'buy-restart': purchaseGuide(buyDraft?.result.accountId);break;
+        case 'trade-buy': await purchaseGuide();break;
+        case 'buy-restart': await purchaseGuide(buyDraft?.result.accountId);break;
         case 'buy-manual': transaction('BUY');break;
         case 'buy-executed': {
           if(!buyDraft||buyDraft.revision!==record.revision) throw Error('Vos espèces ont changé : recalculez les scénarios.');
