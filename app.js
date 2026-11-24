@@ -24,13 +24,14 @@
   const feeCategories={tenue:'Tenue de compte / garde',virement:'Virement / transfert',taxe:'Taxe distincte',autre:'Autres frais prélevés'};
   const pages={dashboard:['Vue d’ensemble','▦'],accounts:['Comptes et positions','▤'],invest:['Opérations','⇄'],
     events:['Dividendes et FCP','◈'],history:['Historique et analyses','◷'],settings:['Cibles et risques','⚙'],data:['Données et sauvegarde','⬡']};
-  let publicWatch={status:'chargement',checkedOn:null,items:[]};
+  const mainPages=['dashboard','accounts','invest','events','history'];
   let store, record, db, calc, tab='dashboard', portfolioId='', busy=false, refreshing=false, plan=null, comparison=null, planInputs=null, importPreview=null;
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
   let importRevision, mergedImport, importReadTicket=0, pendingBackup=null;
   let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
+  const coreSymbols=p=>Object.keys(p?.targets||E.targets);
   const findAccount=id=>db.accounts.find(x=>x.id===id);
   const institution=id=>db.institutions.find(x=>x.id===id)?.label||'—';
   const accName=id=>{
@@ -181,11 +182,11 @@
         colorOf(x.symbol)+' '+(from+gap).toFixed(5)+'% '+(start-gap).toFixed(5)+'%',
         '#171b23 '+(start-gap).toFixed(5)+'% '+start.toFixed(5)+'%'];
     }).join(', ');
-    const core=E.symbols.reduce((n,x)=>n+(holdings.get(x)||0),0);
+    const core=coreSymbols(p).reduce((n,x)=>n+(holdings.get(x)||0),0);
     const legend=entries.map(x=>{
       const actual=x.value/total;
-      const coreWeight=E.symbols.includes(x.symbol)&&core>0?(holdings.get(x.symbol)||0)/core:null;
-      const target=E.symbols.includes(x.symbol)?p.targets[x.symbol]:null;
+      const coreWeight=coreSymbols(p).includes(x.symbol)&&core>0?(holdings.get(x.symbol)||0)/core:null;
+      const target=coreSymbols(p).includes(x.symbol)?p.targets[x.symbol]:null;
       return `<li><span class="allocation-name"><i style="background:${colorOf(x.symbol)}" aria-hidden="true"></i><b>${esc(x.symbol)}</b><small>${esc(E.names[x.symbol]||'')}</small></span>
         <span class="allocation-value"><strong>${pct(actual)}</strong><small>${fc(x.value)}</small>${db.quotes[x.symbol]?'<small>Cours '+showDate(db.quotes[x.symbol].date)+(F.stale(db.quotes[x.symbol],db.settings.staleDays)?' · ancien':'')+'</small>':''}${target!=null?'<small>CORE : '+pct(coreWeight)+' / cible '+pct(target)+'</small>':''}</span></li>`;
     });
@@ -209,16 +210,16 @@
       ${btn('apply-core-targets','Rétablir les objectifs CORE validés','','primary')}</section>`;
   }
   function coreProgress(p) {
-    const actual=Object.fromEntries(E.symbols.map(s=>[s,selectedSgiAccounts(p).reduce((sum,a)=>sum+(a.positions[s]?.market||0),0)]));
+    const actual=Object.fromEntries(coreSymbols(p).map(s=>[s,selectedSgiAccounts(p).reduce((sum,a)=>sum+(a.positions[s]?.market||0),0)]));
     const known=Object.values(actual).reduce((n,v)=>n+v,0);
-    const rows=E.symbols.map(s=>{
+    const rows=coreSymbols(p).map(s=>{
       const weight=known?actual[s]/known:0, target=p.targets[s], diff=weight-target;
       const width=Math.min(100,Math.round(weight*100)),targetWidth=Math.min(100,Math.round(target*100));
       return `<div class="core-progress">
         <div class="core-line"><strong>${esc(s)}</strong><span>${known?pct(weight):'—'} · cible ${pct(target)} · écart ${known?(diff>=0?'+':'')+pct(diff):'—'}</span></div>
         <div class="core-track" aria-label="${esc(s)} actuellement ${pct(weight)}, cible ${pct(target)}"><span style="width:${width}%"></span><i style="left:${targetWidth}%"></i></div></div>`;
     }).join('');
-    const missing=selectedSgiAccounts(p).some(a=>E.symbols.some(sym=>(a.positions[sym]?.qty||0)>0 && !(a.positions[sym]?.price>0)));
+    const missing=selectedSgiAccounts(p).some(a=>coreSymbols(p).some(sym=>(a.positions[sym]?.qty||0)>0 && !(a.positions[sym]?.price>0)));
     return `<article class="pane"><div class="pane-head"><h2>CORE · ${esc(sgiFilter?institution(sgiFilter):'Toutes les SGI')} face aux cibles du portefeuille</h2><p>Le trait clair indique la cible, la barre représente le poids réel dans les actions CORE.</p></div>
       ${known?rows:empty('Aucune action CORE valorisée. Importez d’abord les cours.')}
       ${missing?'<p class="quiet">Cours manquants : les pourcentages sont incomplets.</p>':''}
@@ -230,91 +231,31 @@
       ${btn('dividend-received','Dividende')}${btn('corporate-action','Événements')}
       ${btn('monthly-backup','Sauvegarder')}</nav>`;
   }
-  function coreWatch(p) {
-    const review=R.assess(db,p.id);
-    const summary=review.due?'Revue semestrielle à examiner': 'Prochaine revue : '+showDate(review.dueOn);
-    const selection=R.selectUniverse(db);
-    const qualified=selection.core.filter(x=>x.score!==null).length;
-    const scoreRows=selection.core.map(x=>
-      '<li class="watch-issuer"><strong>'+esc(x.symbol)+'</strong> · '+
-      (x.score===null?'Non classable — '+esc(x.status):x.score+'/100 — '+esc(x.status))+
-      (x.score===null?'<p class="quiet">'+esc(x.missing.slice(0,2).join(' · '))+'</p>':'')+'</li>').join('');
-    const candidateRows=selection.alternatives.slice(0,5).map(x=>
-      '<li class="watch-issuer"><strong>'+esc(x.symbol)+'</strong> · '+x.score+
-      '/100 · admissibilité documentaire à recouper</li>').join('');
-    const suggested=selection.replacements.slice(0,3).map(x=>
-      '<li>'+esc(x.from)+' → '+esc(x.to)+' ('+x.fromScore+
-      ' → '+x.toScore+'/100) · décision manuelle requise</li>').join('');
-    const selectionPanel='<details class="core-selection"><summary>Critères de sélection · '+
-      qualified+'/7 titres CORE classables</summary>'+
-      '<p class="quiet">Filtre préalable : activité conforme et ratios financiers charia documentés ; absence de preuve = non classable. '+
-      'Note /100 : solidité 30, valorisation 20, dividendes 15, liquidité 15, cours 6 mois 10, gouvernance 10. '+
-      'Candidat à partir de 75 points ; surveiller de 55 à 74 ; réexaminer sous 55. '+
-      'Un remplaçant doit dépasser le sortant de 10 points au moins.</p>'+
-      '<p class="quiet">Le score exige des documents et des périodes datés ; il ne remplace pas la vérification des sources. '+
-      'La veille externe et les cotations ne sont pas synchronisées automatiquement avec cet appareil.</p>'+
-      '<ul class="watch-list">'+scoreRows+'</ul>'+
-      '<p class="quiet">Alternatives BRVM préqualifiées : '+selection.alternatives.length+
-      '. Une absence de candidat peut refléter des données manquantes.</p>'+
-      (candidateRows?'<ul class="watch-list">'+candidateRows+'</ul>':'')+
-      (suggested?'<p>Propositions à examiner :</p><ul>'+suggested+'</ul>':'')+
-      '</details>';
-    const matchingCore=item=>{
-      const issuer=item.issuer.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
-      const patterns=[['SNTS',/^SONATEL/],['ORAC',/^ORANGE/],['CIEC',/^CIE( |$)/],
-        ['TOCI',/^(TOTAL|TOTALENERGIES)/],['SMBC',/^SMB( |$)/],
-        ['NTLC',/^NESTLE/],['PALC',/^PALM/]];
-      return patterns.find(([,pattern])=>pattern.test(issuer))?.[0]||null;
-    };
-    const news=publicWatch.items.map(item=>({...item,core:matchingCore(item)}))
-      .sort((a,b)=>Number(Boolean(b.core))-Number(Boolean(a.core))||
-        (b.publishedOn||b.eventOn||'').localeCompare(a.publishedOn||a.eventOn||''));
-    const officialRows=news.slice(0,10).map(item=>
-      '<li class="watch-issuer"><strong>'+esc(item.core||item.issuer)+'</strong> · '+esc(item.title)+
-      (item.publishedOn?' · publié le '+showDate(item.publishedOn):
-        item.eventOn?' · date d’événement '+showDate(item.eventOn):'')+
-      (item.type==='fractionnement'?'<p class="watch-warnings">Vérifier si une opération sur titres doit être comptabilisée sur justificatif ; aucune régularisation automatique.</p>':'')+
-      ' · <a target="_blank" rel="noopener noreferrer" href="'+attr(item.url)+'">Document BRVM</a></li>').join('');
-    const watchAge=publicWatch.checkedOn&&(Date.parse(F.today())-Date.parse(publicWatch.checkedOn)>7*86400000);
-    const relevantCount=news.filter(item=>item.core).length;
-    const officialPanel='<details class="core-public-watch"><summary>Publications BRVM'+
-      (relevantCount?' · '+relevantCount+' concernant le CORE':'')+'</summary>'+
-      '<p class="quiet">'+(publicWatch.status==='chargement'?'Vérification des annonces publiques…':
-      publicWatch.status==='erreur'?'Flux documentaire indisponible : aucune publication inventée.':
-      publicWatch.checkedOn===null?'Première collecte documentaire non encore exécutée.':
-      'Dernier contrôle documentaire : '+showDate(publicWatch.checkedOn)+(watchAge?' (ancien)':''))+
-      '. Documents officiels uniquement, sans cotation ni confirmation de conformité charia. Aucune opération financière exécutée.</p>'+
-      (officialRows?'<ul class="watch-list">'+officialRows+'</ul>':'')+
-      '</details>';
-    const tracked=review.rows.map(x=>{
-      const main=x.quantity>0?'<strong>'+fc(x.market)+'</strong> · coût '+fc(x.cost):'<span class="quiet">Aucune position détenue</span>';
-      const six=x.change
-        ?'<span class="'+(x.change.change<0?'loss':'gain')+'">'+(x.change.change>=0?'+':'')+pct(x.change.change)+'</span> · '+showDate(x.change.from)+' → '+showDate(x.change.to)
-        :'<span class="quiet">Historique de cours comparable sur 6 mois insuffisant</span>';
-      const pnl=x.sincePurchase===null?'—':(x.sincePurchase>=0?'+':'')+pct(x.sincePurchase);
-      const gap=x.gap===null?'—':(x.gap>=0?'+':'')+pct(x.gap);
-      const warnings=x.warnings.length?'<p class="watch-warnings">'+esc(x.warnings.join(' · '))+'</p>':'';
-      return '<li class="watch-issuer"><div class="watch-heading"><strong>'+esc(x.symbol)+'</strong>'+
-        '<span>Poids '+pct(x.actual)+' / cible '+pct(x.target)+' · écart '+gap+'</span></div>'+
-        '<p>'+main+' · P/L depuis achats '+esc(pnl)+'</p>'+
-        '<p>Variation de cours sur 6 mois : '+six+'</p>'+
-        '<p class="quiet">Cours '+showDate(x.quoteDate)+' · résultats '+showDate(x.finDate)+' · filtrage '+esc(x.screening)+'</p>'+
-        warnings+'</li>';
-    }).join('');
-    return `<article class="pane core-watch ${review.due?'core-watch-due':''}">
-      <div class="pane-head"><h2>Veille des actions CORE</h2>
-        <p>${esc(summary)} · ${review.alerts} titre(s) à documenter ou surveiller</p></div>
-      <details ${review.due?'open':''}>
-        <summary>Suivi des 7 titres · cours, résultats, pondérations et signaux</summary>
-        <p class="quiet">Analyse automatique des données conservées sur cet appareil, sans accès aux autres données privées. Écart aux cibles : alerte au-delà de ±2 points. Les cours anciens, les publications manquantes et les fractionnements non documentés limitent la fiabilité des comparaisons.</p>
-        <ul class="watch-list">${tracked}</ul>
-        <p class="quiet">La variation sur six mois est celle du cours uniquement, hors dividendes, à partir de deux dates comparables disponibles. Le P/L depuis achats utilise le coût de revient enregistré, frais compris : ce n’est pas une performance semestrielle.</p>
-        <p class="quiet">La revue peut conduire à conserver, surveiller ou proposer de modifier CORE. Elle ne vend, n’achète ni ne change les cibles automatiquement. Les documents publics doivent être vérifiés avant décision.</p>
-        ${review.due?btn('ack-core-review','Consigner l’examen de la revue',p.id,'primary'):''}
-      </details>
-      ${selectionPanel}
-      ${officialPanel}
-    </article>`;
+  function manualEditor() {
+    const p=getPortfolio();
+    if(!p) throw Error('Sélectionnez un portefeuille avant de modifier les actions.');
+    const current=Object.entries(p.targets);
+    const rows=[...current,...(current.length<12?[['','']]:[])];
+    const stocks=rows.map(([symbol,target],i)=>
+      '<div class="manual-core-line">'+
+      field('core_symbol_'+i,'Action '+(i+1)+' · symbole',
+        input('core_symbol_'+i,symbol,'text','maxlength="18" autocapitalize="characters" placeholder="Ex. SNTS"'))+
+      field('core_weight_'+i,'Cible %',
+        input('core_weight_'+i,symbol?Math.round(target*10000)/100:'','number','step="0.01" min="0" max="100" placeholder="0"'))+
+      '</div>').join('');
+    modal('Modifier mes données et mes actions',
+      '<p class="quiet">Tu peux changer les actions du CORE, leurs pourcentages et les données de marché. Aucun achat, vente, solde ou historique n’est modifié par un changement de cibles.</p>'+
+      '<div class="manual-shortcuts" aria-label="Modifications manuelles">'+
+        btn('manual-quote','Cours / prix')+btn('refresh','Mettre à jour les cours')+btn('foundation','Données émetteur')+
+        btn('instrument','Nom / fiche action')+btn('quote-import','Importer des cours')+
+        btn('import','Importer mon JSON')+btn('manual-manage-data','Sauvegardes')+
+      '</div>'+
+      '<h3>Actions ciblées du CORE</h3>'+
+      form('manual-core', '<div class="manual-core-lines">'+stocks+'</div>'+
+        '<p class="quiet">Total obligatoire : 100 %. Laisser les deux cases de la dernière ligne vides pour ne pas ajouter de titre. Pour retirer une action, vider les deux cases de sa ligne et répartir son pourcentage sur les autres.</p>'+
+        '<label class="check"><input type="checkbox" name="confirmed" required> Je confirme : seules les cibles CORE changent, jamais mes positions réelles.</label>',
+        'Enregistrer les actions du CORE',p.id)
+    );
   }
   function dashboard() {
     if(!db.accounts.length) return welcome();
@@ -325,13 +266,12 @@
     const points=db.observations.filter(x=>x.portfolioId===p.id&&x.complete&&x.attestation==='close-v1').sort((a,b)=>a.date.localeCompare(b.date));
     return `<div class="context"><div><p class="overline">Portefeuille ${p.unknown?'· cours incomplets':''}</p><strong class="total">${fc(p.total)}</strong><p class="quiet">${p.accounts.length} compte(s) · Patrimoine familial connu : ${fc(all.total)}</p></div>${portfolioPicker()}</div>
       ${quickActions()}
+      <div class="manual-editor-access">${btn('manual-editor','Modifier mes données et mes actions','','primary')}</div>
       ${allocationVisual(p)}
       <div class="kpis">${kpi('Patrimoine du portefeuille',fc(p.total),p.unknown?'Valeur partielle':'Titres et liquidités','accent')}${kpi('Cash disponible',fc(p.available),`${fc(p.reserved)} réservés sur ${fc(p.cash)}`)}
       ${kpi('Plus-value latente',fc(p.pnl),p.unknown?'Positions cotées uniquement':`Coût réel des titres · ${fc(p.cost)}`,p.pnl<0?'loss':'gain')}
       ${kpi('Dividendes nets reçus',fc(p.dividends),`${fc(p.grossDividends)} bruts depuis l’ouverture`)}</div>
-      ${targetNotice(p)}
-      ${coreProgress(p)}
-      ${coreWatch(p)}
+
       ${points.length>1?pane('Évolution du patrimoine',curve(points),'Valeurs historiques validées et comparables'):''}
       <details class="dashboard-advanced"><summary>Voir le détail des comptes et des analyses</summary>
       <div class="split">${pane('Répartition par SGI',bars(calc.institutions.map(i=>({label:i.label,value:p.accounts.filter(a=>a.institutionId===i.id).reduce((n,a)=>n+(a.totalXof??0),0)}))))}</div>
@@ -421,7 +361,7 @@
     const rows=p.accounts.map(a=>[esc(accName(a.id)),fc(a.current),fc(a.cash),fc(a.fees),fc(a.cashRemaining),fc(a.forecast)]);
     const fees=p.lines.reduce((n,l)=>n+l.broker+l.other,0);
     const spent=p.lines.reduce((n,l)=>n+l.total,0);
-    const coreRows=E.symbols.map(s=>[esc(s)+' · '+esc(E.names[s]||''),pct(p.before[s]),pct(p.targets[s]),pct(p.after[s]),pct(p.after[s]-p.targets[s])]);
+    const coreRows=Object.keys(p.targets).map(s=>[esc(s)+' · '+esc(db.instruments[s]?.label||E.names[s]||''),pct(p.before[s]),pct(p.targets[s]),pct(p.after[s]),pct(p.after[s]-p.targets[s])]);
     return pane('Achats ponctuels simulés',
       `<div class="account-total">${tag('Simulation sans exécution','ok')}<strong>${fc(spent)}</strong><span>Frais estimés inclus : ${fc(fees)}</span></div>
       <p class="quiet">Écart absolu aux cibles : ${pct(p.deviation.before)} avant → ${pct(p.deviation.after)} après. La valeur ne doit pas augmenter fictivement du montant dépensé : seul le coût des frais la réduit.</p>
@@ -694,7 +634,7 @@
     if(!db) return;
     if(!calc.portfolios.some(p=>p.id===portfolioId)) portfolioId=calc.portfolios[0]?.id||'';
     if(sgiFilter && !calc.portfolios.find(p=>p.id===portfolioId)?.accounts.some(a=>a.institutionId===sgiFilter)) sgiFilter='';
-    $('#nav').innerHTML=Object.entries(pages).map(([key,[label,icon]])=>
+    $('#nav').innerHTML=mainPages.map(key=>[key,pages[key]]).map(([key,[label,icon]])=>
       `<button type="button" data-page="${key}" ${key===tab?'aria-current="page"':''}><span aria-hidden="true">${icon}</span>${label}</button>`).join('');
     $('#page-title').textContent=pages[tab][0];
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
@@ -854,6 +794,8 @@
           break;
         case 'quote-import': $('#quote-import').click(); break;
         case 'manual-quote': manualQuote(); break;
+        case 'manual-editor': manualEditor(); break;
+        case 'manual-manage-data': close();goTo('data');break;
         case 'ack-core-review': {
           const p=getPortfolio();
           if(!p || p.id!==id) throw Error('Portefeuille introuvable.');
@@ -1173,6 +1115,36 @@
             if(trim(f,key)!=='') i.fundamentals[key]=number(f,key);
           break;
         }
+        case 'manual-core': {
+          if(!f.has('confirmed')) throw Error('Confirmez le changement des cibles.');
+          const source=db.portfolios.find(p=>p.id===id);
+          if(!source) throw Error('Portefeuille introuvable.');
+          const count=Object.keys(source.targets).length+(Object.keys(source.targets).length<12?1:0);
+          const targets=Object.create(null);
+          for(let i=0;i<count;i++) {
+            const raw=trim(f,'core_symbol_'+i).toUpperCase();
+            const rawWeight=trim(f,'core_weight_'+i);
+            if(!raw&&!rawWeight) continue;
+            const symbol=F.normalizeSymbol(raw);
+            if(!F.symbol(symbol)||raw!==symbol)
+              throw Error('Symbole de l’action '+(i+1)+' invalide.');
+            if(!/^\d+(?:\.\d{1,2})?$/.test(rawWeight))
+              throw Error('Pourcentage invalide pour '+symbol+' (maximum deux décimales).');
+            const weight=Number(rawWeight)/100;
+            if(weight<0||weight>1||Object.hasOwn(targets,symbol))
+              throw Error('Action en double ou pourcentage invalide : '+symbol);
+            targets[symbol]=weight;
+          }
+          if(!Object.keys(targets).length || Object.keys(targets).length>12 ||
+            Math.abs(Object.values(targets).reduce((a,b)=>a+b,0)-1)>0.000001)
+            throw Error('Les actions doivent représenter exactement 100 %.');
+          next=structuredClone(db);
+          next.portfolios.find(p=>p.id===id).targets={...targets};
+          F.validate(next);
+          plan=null;comparison=null;planInputs=null;
+          message='Cibles CORE modifiées sur cet appareil. Positions et cash inchangés.';
+          break;
+        }
         case 'targets':
           next=structuredClone(db);
           next.portfolios.find(p=>p.id===id).targets=Object.fromEntries(E.symbols.map(s=>[s,number(f,s)/100]));
@@ -1309,13 +1281,6 @@
     try {await offer.prompt();} catch {notify('Installation indisponible dans cette fenêtre.',true);}
   });
   function start() {
-    Q.publicWatch().then(feed=>{
-      publicWatch={...feed,status:'ok'};
-      if(db&&tab==='dashboard') render();
-    }).catch(()=>{
-      publicWatch={status:'erreur',checkedOn:null,items:[]};
-      if(db&&tab==='dashboard') render();
-    });
     if('serviceWorker' in navigator && isSecureContext)
       navigator.serviceWorker.register('./sw.js').then(registration=>{
         const announce=()=>{

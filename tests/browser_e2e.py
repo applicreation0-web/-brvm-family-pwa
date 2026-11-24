@@ -72,8 +72,8 @@ def check(first, second):
         expect(page.get_by_text('Aucune écriture ne sera ajoutée.')).to_be_visible()
         confirm_import(page)
         expect(page.locator('.backup-banner')).to_be_visible()
-        page.locator('#nav [data-page=data]').press('Enter')
-        page.get_by_role('button', name='Saisir un cours / une VL').click()
+        page.get_by_role('button', name='Modifier mes données et mes actions').click()
+        page.get_by_role('dialog').get_by_role('button', name='Cours / prix').click()
         dialog=page.get_by_role('dialog')
         dialog.locator('[name=symbol]').fill('SNTS')
         dialog.locator('[name=price]').fill('4000')
@@ -82,7 +82,7 @@ def check(first, second):
         expect(dialog.get_by_text('Sauvegarde mensuelle obligatoire :')).to_be_visible()
         dialog.get_by_role('button', name='Fermer').click()
         with page.expect_download() as backup_download:
-            page.get_by_role('button', name='Sauvegarde mensuelle JSON · À effectuer').click()
+            page.locator('.backup-banner').get_by_role('button', name='Sauvegarder et vérifier').click()
         backup=backup_download.value.path().read_bytes()
         with zipfile.ZipFile(BytesIO(backup)) as archive:
             names=archive.namelist()
@@ -109,7 +109,8 @@ def check(first, second):
         zip_page.locator('#nav [data-page=accounts]').press('Enter')
         expect(zip_page.locator('article h2').filter(has_text='Compte fictif E2E')).to_be_visible()
         zipcontext.close()
-        page.get_by_role('button', name='Saisir un cours / une VL').click()
+        page.get_by_role('button', name='Modifier mes données et mes actions').click()
+        page.get_by_role('dialog').get_by_role('button', name='Cours / prix').click()
         dialog=page.get_by_role('dialog')
         dialog.locator('[name=symbol]').fill('SNTS')
         dialog.locator('[name=price]').fill('4000')
@@ -118,16 +119,11 @@ def check(first, second):
         expect(page.get_by_text('Cotation enregistrée.')).to_be_visible()
         page.locator('#nav [data-page=dashboard]').press('Enter')
         expect(page.locator('.allocation-pie')).to_be_visible()
-        expect(page.get_by_role('heading', name='CORE · Toutes les SGI face aux cibles du portefeuille')).to_be_visible()
-        watch=page.locator('.core-watch')
-        expect(watch.get_by_role('heading', name='Veille des actions CORE')).to_be_visible()
-        expect(watch.get_by_text('Prochaine revue : 23/05/2027', exact=False)).to_be_visible()
-        watch.locator('details').first.evaluate('(el)=>el.open=true')
-        expect(watch.locator('details').first.locator('.watch-issuer')).to_have_count(7)
-        watch.locator('details.core-selection').evaluate('(el)=>el.open=true')
-        expect(watch.locator('details.core-selection')).to_contain_text('0/7 titres CORE classables')
-        expect(watch.get_by_text('Historique de cours comparable sur 6 mois insuffisant', exact=False).first).to_be_visible()
-        assert page.locator('.core-watch [data-action=ack-core-review]').count()==0
+        assert page.locator('.core-watch').count()==0
+        assert page.locator('.core-selection').count()==0
+        assert page.locator('#nav [data-page=settings]').count()==0
+        assert page.locator('#nav [data-page=data]').count()==0
+        expect(page.get_by_role('button', name='Modifier mes données et mes actions')).to_be_visible()
         expect(page.get_by_role('button', name='Acheter', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name='Vendre', exact=True)).to_be_visible()
         # Vendre 2 actions avec frais vrais, puis racheter une action sur avis.
@@ -210,43 +206,46 @@ def check(first, second):
         page.screenshot(path=str(shots / 'dashboard_fictif_android_390px.png'),full_page=True)
         page.get_by_role('button', name='Menu').click()
         expect(page.locator('.rail')).to_be_visible()
-        page.locator('#nav [data-page=settings]').click()
-        page.set_viewport_size({'width':1366,'height':900})
-        # Lisibilité des analyses : aucune table sur huit colonnes avec valeurs inconnues répétées.
-        expect(page.locator('.issuer-audit')).to_be_visible()
-        assert page.locator('.issuer-audit table').count()==0
-        assert page.locator('.issuer-audit').get_attribute('open') is None
-        page.locator('.issuer-audit summary').first.click()
-        expect(page.locator('.issuer-pending')).to_be_visible()
-        assert page.locator('.issuer-audit').inner_text().count('Indisponible')==0
-        page.locator('.issuer-pending summary').first.click()
-        expect(page.locator('.issuer-pending-item').first).to_be_visible()
+        page.get_by_role('button', name='Menu').click()
         page.set_viewport_size({'width':360,'height':800})
+        editor_button=page.get_by_role('button', name='Modifier mes données et mes actions')
+        expect(editor_button).to_be_visible()
+        editor_button.click()
+        manual=page.get_by_role('dialog')
+        expect(manual.get_by_role('heading', name='Modifier mes données et mes actions')).to_be_visible()
+        assert manual.locator('form[data-form=manual-core] .manual-core-line').count()==8
         assert page.evaluate('document.documentElement.scrollWidth === document.documentElement.clientWidth')
         shots=ROOT / 'test_artifacts'
         shots.mkdir(exist_ok=True)
-        page.screenshot(path=str(shots / 'emetteurs_mobiles_fictifs_360px.png'), full_page=True)
+        page.screenshot(path=str(shots / 'editeur_manuel_mobile_fictif_360px.png'),full_page=True)
         page.set_viewport_size({'width':1366,'height':900})
-        page.locator('.issuer-audit summary').first.click()
-        # Les objectifs privés anciens ne changent pas silencieusement : restauration explicite et vérifiée.
-        targets=page.locator('form[data-form=targets]')
-        for sym,value in [('SNTS','25'),('ORAC','15'),('CIEC','10'),('TOCI','15'),
-                          ('SMBC','10'),('NTLC','15'),('PALC','10')]:
-            targets.locator('[name='+sym+']').fill(value)
-        targets.locator('button[type=submit]').click()
-        page.locator('#nav [data-page=dashboard]').press('Enter')
-        notice=page.locator('.core-notice').first
-        expect(notice).to_be_visible()
-        expect(notice.get_by_text('Sonatel 30 %', exact=False)).to_be_visible()
-        notice.get_by_role('button', name='Rétablir les objectifs CORE validés').click()
-        confirm=page.get_by_role('dialog')
-        confirm.locator('[name=confirmed]').check()
-        confirm.locator('button[type=submit]').click()
-        expect(page.locator('.core-notice')).to_have_count(0)
-        expect(page.locator('form[data-form=targets] [name=SNTS]')).to_have_value('30')
-        page.locator('#nav [data-page=dashboard]').click()
-        expect(page.get_by_role('heading', name='Vue d’ensemble')).to_be_visible()
-        expect(page.get_by_text('cible 30 %', exact=False).first).to_be_visible()
+        original_total=page.locator('.total').text_content()
+        # Remplacer un ticker CORE ne vend jamais une position enregistrée.
+        manual.locator('[name=core_symbol_0]').fill('TEST')
+        manual.locator('[name=confirmed]').check()
+        manual.locator('button[type=submit]').click()
+        expect(manual).not_to_be_visible()
+        assert page.locator('.total').text_content()==original_total
+        editor_button.click()
+        manual=page.get_by_role('dialog')
+        expect(manual.locator('[name=core_symbol_0]')).to_have_value('TEST')
+        manual.locator('[name=core_symbol_0]').fill('SNTS')
+        manual.locator('[name=core_weight_0]').fill('25')
+        manual.locator('[name=core_weight_3]').fill('17')
+        manual.locator('[name=confirmed]').check()
+        manual.locator('button[type=submit]').click()
+        expect(manual).not_to_be_visible()
+        editor_button.click()
+        manual=page.get_by_role('dialog')
+        expect(manual.locator('[name=core_weight_0]')).to_have_value('25')
+        expect(manual.locator('[name=core_weight_3]')).to_have_value('17')
+        # Restauration des 30/12 % testée explicitement.
+        manual.locator('[name=core_weight_0]').fill('30')
+        manual.locator('[name=core_weight_3]').fill('12')
+        manual.locator('[name=confirmed]').check()
+        manual.locator('button[type=submit]').click()
+        expect(manual).not_to_be_visible()
+        assert page.locator('.total').text_content()==original_total
 
         # Nouvelle SGI sur le même portefeuille ; zéro achat/dépôt, répartition globale inchangée.
         initial_total=page.locator('.total').text_content()
@@ -280,13 +279,17 @@ def check(first, second):
         for width in (360, 412, 768, 1366):
             page.set_viewport_size({'width': width, 'height': 900})
             assert page.evaluate('document.documentElement.scrollWidth === document.documentElement.clientWidth')
-        page.get_by_role('button', name='Cours BRVM').click()
+        page.locator('#nav [data-page=dashboard]').press('Enter')
+        page.get_by_role('button', name='Modifier mes données et mes actions').click()
+        page.get_by_role('dialog').get_by_role('button', name='Mettre à jour les cours').click()
         market=page.get_by_role('dialog')
         expect(market.get_by_role('heading', name='Mettre à jour les cours BRVM')).to_be_visible()
         expect(market.get_by_text("aucun flux automatique autorisé", exact=False)).to_be_visible()
         expect(market.get_by_role('button', name='1. Importer un fichier de cours CSV / JSON')).to_be_visible()
         market.get_by_role('button', name='Fermer').click()
-        page.locator('#nav [data-page=data]').press('Enter')
+        page.locator('#nav [data-page=dashboard]').press('Enter')
+        page.get_by_role('button', name='Modifier mes données et mes actions').click()
+        page.get_by_role('dialog').get_by_role('button', name='Sauvegardes').click()
         page.get_by_role('button', name='Exporter chiffré').click()
         dialog = page.get_by_role('dialog')
         dialog.locator('[name=pass]').fill(PHRASE)
@@ -309,7 +312,9 @@ def check(first, second):
         expect(other.locator('.total')).to_have_text(total)
         other.locator('#nav [data-page=accounts]').press('Enter')
         expect(other.locator('article h2').filter(has_text='Compte fictif E2E')).to_be_visible()
-        other.locator('#nav [data-page=data]').press('Enter')
+        other.locator('#nav [data-page=dashboard]').press('Enter')
+        other.get_by_role('button', name='Modifier mes données et mes actions').click()
+        other.get_by_role('dialog').get_by_role('button', name='Sauvegardes').click()
         with other.expect_download() as action_backup_download:
             other.get_by_role('button', name='Sauvegarde mensuelle JSON · À effectuer').click()
         action_backup=action_backup_download.value.path().read_bytes()
@@ -361,7 +366,9 @@ def check(first, second):
         page.get_by_role('button', name='Déverrouiller').click()
         expect(page.locator('.total')).to_be_visible()
         context.set_offline(False)
-        page.locator('#nav [data-page=data]').press('Enter')
+        page.locator('#nav [data-page=dashboard]').press('Enter')
+        page.get_by_role('button', name='Modifier mes données et mes actions').click()
+        page.get_by_role('dialog').get_by_role('button', name='Sauvegardes').click()
         page.get_by_role('button', name='Effacer mes données locales').click()
         page.get_by_role('dialog').locator('[name=confirm]').fill('EFFACER')
         page.get_by_role('button', name='Effacer définitivement').click()

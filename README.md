@@ -1,3 +1,10 @@
+## BRVM Family V3.6.1 — tableau de bord simplifié
+- Un seul accès visible « Modifier mes données et mes actions » ouvre les changements manuels : composition du CORE (symboles et poids), cours, données émetteur, fiches d'actions, JSON privé et sauvegardes.
+- Les actions CORE sont personnalisables par portefeuille : 1 à 12 symboles distincts, somme des cibles 100 %, secteur bancaire exclu. La modification ne crée aucun ordre, aucune vente, aucun dépôt et ne réécrit pas les positions historiques.
+- Les écrans de scores, veille et recommandations ne sont plus affichés sur l'accueil. Leur code demeure isolé : aucun dossier personnel n'est transmis.
+- Les opérations essentielles (acheter, vendre, verser, dividendes, événements, sauvegarde) restent accessibles.
+- Remplacer une action dans le CORE ne vend pas les anciennes actions détenues. Les opérations réelles restent explicitement confirmées, frais à l'appui.
+
 # BRVM Family V3.6 — GitHub Pages et APK Android
 
 PWA indépendante, hébergée directement sur GitHub Pages. Aucun hébergement Vercel ou constructeur d'applications n'est nécessaire.
