@@ -28,7 +28,7 @@
   let store, record, db, calc, tab='dashboard', portfolioId='', busy=false, refreshing=false, plan=null, comparison=null, planInputs=null, importPreview=null;
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
-  let importRevision, mergedImport, importReadTicket=0;
+  let importRevision, mergedImport, importReadTicket=0, guidedBuy=null;
   let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
   const coreSymbols=p=>Object.keys(p?.targets||E.targets);
@@ -72,7 +72,7 @@
   function clearModal() {
     if($('#modal').open) return;
     $('#modal').replaceChildren();
-    importPreview=null;mergedImport=null;importReadTicket++;quoteOptions=null;
+    importPreview=null;mergedImport=null;guidedBuy=null;importReadTicket++;quoteOptions=null;
   }
   function close() { $('#modal').close(); clearModal();restoreFocus?.focus(); }
   function showError(err) {
@@ -300,6 +300,77 @@
       (entity?`<label class="check"><input name="archived" type="checkbox" ${entity.archived?'checked':''}> Archiver et conserver le suivi</label>`:''),
       'Enregistrer',group+'|'+(id||'')));
   }
+  function startGuidedBuy() {
+    const accts=calc.accounts.filter(a=>a.currency==='XOF'&&!F.isArchived(db,a));
+    if(!accts.length) throw Error('Aucun compte SGI actif en FCFA.');
+    guidedBuy=null;
+    const selected=accts.find(a=>a.portfolioId===portfolioId)||accts[0];
+    modal('Acheter · Choisir la SGI et la somme',
+      '<p>Quelle somme souhaitez-vous investir sur cette SGI ?</p>'+
+      form('buy-budget',
+        field('accountId','SGI et compte',select('accountId',
+          accts.map(a=>[a.id,accName(a.id)+' · '+fc(a.available)+' disponibles']),selected.id,'required'))+
+        field('budget','Budget maximal, frais compris (FCFA)',
+          input('budget','','number','min="1" step="1" required placeholder="Ex. 150000"'))+
+        '<p class="quiet">La proposition ne peut utiliser que les espèces réellement disponibles sur ce compte, sans transfert fictif depuis une autre SGI.</p>'+
+        '<label class="check"><input name="verifiedOnly" type="checkbox"> Uniquement les titres dont la conformité est documentée</label>',
+        'Voir les actions proposées')+
+      '<div class="actions">'+btn('buy-manual','J’ai déjà un avis d’achat exécuté')+'</div>');
+  }
+  function guidedBuyRows(form) {
+    const values=new FormData(form);
+    return guidedBuy.base.lines.map((line,i)=>({
+      symbol:line.symbol,qty:Number(values.get('qty_'+i)),
+      orderType:values.get('orderType_'+i),limitPrice:Number(values.get('limitPrice_'+i))
+    }));
+  }
+  function updateGuidedBuyTotals(form) {
+    if(!form||!guidedBuy) return;
+    const target=form.querySelector('[data-buy-totals]'),submit=form.querySelector('button[type="submit"]');
+    for(const row of form.querySelectorAll('.buy-proposal-line')) {
+      const market=row.querySelector('[name^="orderType_"]').value==='MARKET';
+      const price=row.querySelector('[data-limit-field]');
+      price.hidden=market;price.querySelector('input').required=!market;
+    }
+    try {
+      if(record.revision!==guidedBuy.revision)
+        throw Error('Les données ont changé : recommencez la simulation.');
+      const r=F.priceBuyBudget(db,{accountId:guidedBuy.accountId,budget:guidedBuy.budget,lines:guidedBuyRows(form)});
+      target.classList.remove('buy-invalid');
+      target.innerHTML='<strong>Total estimé frais compris : '+fc(r.spent)+' / '+fc(r.budget)+'</strong>'+
+        '<p>Solde du budget : '+fc(r.remaining)+' · Frais estimés : '+fc(r.fees)+'</p>'+
+        r.lines.map(l=>'<div>'+esc(l.symbol)+' · '+fmt.format(l.qty)+' action(s) · '+fc(l.total)+'</div>').join('')+
+        (r.guaranteed?'<p class="quiet">Cours limite : plafond unitaire, exécution non garantie. Frais fixes non renseignés exclus.</p>':
+          '<p class="buy-risk">Au marché : le prix exécuté et les frais ne sont pas garantis, et le coût peut dépasser le budget. Préférez un cours limite.</p>');
+      submit.disabled=false;
+    } catch(err) {
+      target.classList.add('buy-invalid');target.textContent=err.message;submit.disabled=true;
+    }
+  }
+  function showGuidedBuyProposal() {
+    if(!guidedBuy) throw Error('Proposition expirée.');
+    const base=guidedBuy.base;
+    const lines=base.lines.map((l,i)=>
+      '<section class="buy-proposal-line"><strong>'+esc(l.symbol)+' · '+
+      esc(db.instruments[l.symbol]?.label||E.names[l.symbol]||l.symbol)+'</strong>'+
+      '<p class="quiet">Cours daté : '+fc(l.referencePrice)+' · '+showDate(l.quote.date)+' · '+esc(l.quote.source)+'</p>'+
+      '<div class="buy-proposal-controls">'+
+      field('qty_'+i,'Quantité',input('qty_'+i,l.qty,'number','min="1" max="1000000" step="1" required'))+
+      field('orderType_'+i,'Mode d’achat',select('orderType_'+i,
+        [['LIMIT','Cours limite (recommandé)'],['MARKET','Au marché (prix inconnu)']],'LIMIT'))+
+      '<div data-limit-field>'+field('limitPrice_'+i,'Cours limite (FCFA)',
+        input('limitPrice_'+i,l.price,'number','min="1" step="1" required'))+'</div></div></section>'
+    ).join('');
+    modal('Acheter · Vérifier les propositions',
+      '<p><strong>'+esc(accName(guidedBuy.accountId))+'</strong> · Budget '+fc(guidedBuy.budget)+'</p>'+
+      '<p class="quiet">Quantités et cours modifiables. Le total est recalculé en incluant les frais configurés.</p>'+
+      form('buy-create',lines+'<div class="buy-budget-totals" data-buy-totals role="status"></div>'+
+        '<label class="check"><input type="checkbox" name="acknowledge" required> Je confirme ces projets, sans transmission automatique à ma SGI.</label>',
+        'Enregistrer les projets d’ordres')+
+      '<div class="actions">'+btn('buy-back','Modifier la somme')+btn('buy-manual','Saisir un achat exécuté')+'</div>');
+    updateGuidedBuyTotals($('#modal form[data-form="buy-create"]'));
+  }
+
   function investment() {
     const p=getPortfolio();
     if(!p) return welcome();
@@ -852,7 +923,9 @@
         case 'transaction': transaction(id||'DEPOSIT'); break;
         case 'open-planner': goTo('invest');$('.operations-planner').open=true;$('.operations-planner').scrollIntoView({block:'start'});break;
         case 'open-orders': goTo('invest');$('.operations-orders').open=true;$('.operations-orders').scrollIntoView({block:'start'});break;
-        case 'trade-buy': transaction('BUY');break;
+        case 'trade-buy': startGuidedBuy();break;
+        case 'buy-manual': guidedBuy=null;transaction('BUY');break;
+        case 'buy-back': startGuidedBuy();break;
         case 'trade-sell': transaction('SELL');break;
         case 'dividend-received': transaction('DIVIDEND');break;
         case 'sell-position': {const [accountId,symbol]=id.split('|');const qty=calc.accounts.find(a=>a.id===accountId)?.positions[symbol]?.qty||0;transaction('SELL',{accountId,symbol,qty});break;}
