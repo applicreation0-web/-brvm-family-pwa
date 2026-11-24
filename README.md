@@ -1,3 +1,10 @@
+# BRVM Family V3.6.5 — Acheter avec scénarios de trésorerie par SGI
+- Bouton **Acheter** : choix du compte/SGI, montant total que l'utilisateur accepte d'investir, méthode **cours limite** ou **au marché**. Le moteur propose trois scénarios (50 %, 75 % et 100 % du budget) à partir des espèces réellement disponibles et des cibles CORE du portefeuille.
+- Frais estimatifs par compte, quantités entières, cours de référence, espèces restantes et budget non investi visibles par scénario. Le total proposé inclut les frais paramétrés et reste toujours inférieur au budget et au cash disponible. Taxes ou frais supplémentaires non connus = à vérifier au courtier.
+- À cours limite, l'utilisateur peut créer des **projets** (pas d'ordre envoyé, aucune trésorerie débitée), puis saisir **uniquement les opérations réellement exécutées sur avis** ; le budget libre et les cibles sont recalculés après chaque nouvelle écriture. L'ordre au marché est une **simulation sans garantie de total** : aucun projet plafonné ne peut être créé dans ce mode.
+- Protection : les suggestions demandent un cours du jour ou de la dernière séance ouvrée (date/source affichées). Les cours antérieurs ne déclenchent pas de recommandation ; lien vers la BRVM officielle. **Aucun flux de cotations automatiques sous licence n'est actuellement configuré** (`market/feed.json` désactivé) ; l'auto-refresh existant nécessite une autorisation fournisseur et une configuration réelle. Ne jamais annoncer des cours en direct fictifs.
+- Aucune ligne réelle de compte ni JSON privé dans GitHub. Les exports du 24 novembre provenaient d'une base historique incomplète : vérifier les soldes sur avis SGI avant d'investir et ne jamais corriger un compte automatiquement sans justificatif.
+
 # BRVM Family V3.6.4 — opérations libres, confirmations et retrait sûr du journal
 - Suppression du blocage de sauvegarde mensuelle obligatoire et de la bannière à répétition. Sauvegarde ZIP volontaire disponible en un clic et export chiffré conservé.
 - Deux étapes avant comptabilisation réelle : récapitulatif détaillé, puis **Confirmer et comptabiliser**. Une modification du formulaire annule cette confirmation.
