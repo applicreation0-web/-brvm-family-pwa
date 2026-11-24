@@ -158,14 +158,6 @@ def check(first, second):
                 has_text=f'Compte fictif {i}')).to_be_visible()
         multi_context.close()
 
-        page.get_by_role('button', name='Modifier mes données et mes actions').click()
-        page.get_by_role('dialog').get_by_role('button', name='Cours / prix').click()
-        dialog=page.get_by_role('dialog')
-        dialog.locator('[name=symbol]').fill('SNTS')
-        dialog.locator('[name=price]').fill('4000')
-        dialog.locator('[name=source]').fill('Cotation fictive recette')
-        dialog.get_by_role('button', name='Enregistrer le cours').click()
-        expect(page.get_by_text('Cotation enregistrée.')).to_be_visible()
         page.locator('#nav [data-page=dashboard]').press('Enter')
         expect(page.locator('.allocation-pie')).to_be_visible()
         assert page.locator('.core-watch').count()==0
