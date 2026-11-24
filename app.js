@@ -546,6 +546,48 @@
         '<p class="empty">Aucune analyse financière documentée. Les cours seuls ne constituent pas une analyse d’émetteur.</p>')+
       missing+'<div class="actions">'+btn('foundation','Saisir des données émetteur')+'</div></details>';
   }
+  function transactionConfirmation(form) {
+    if(form.dataset.finalConfirmed==='yes') return false;
+    const f=new FormData(form),kind=f.get('type')||form.dataset.type;
+    const accountId=f.get('accountId')||form.dataset.account;
+    const detail=[
+      ['Opération',labels[kind]||kind],
+      ['Compte',accName(accountId)],
+      ['Date',f.get('date')||'—'],
+      ['Référence',f.get('brokerRef')||'—'],
+      ['Titre',f.get('symbol')],
+      ['Montant',f.get('amount') ? f.get('amount')+' FCFA' : null],
+      ['Quantité',f.get('qty')],
+      ['Cours',f.get('price') ? f.get('price')+' FCFA' : null],
+      ['Total réel',f.get('actualTotal') ? f.get('actualTotal')+' FCFA' : null],
+      ['Courtage',f.get('broker') ? f.get('broker')+' FCFA' : null],
+      ['Autres frais',f.get('other') ? f.get('other')+' FCFA' : null],
+      ['Taxes',f.get('tax') ? f.get('tax')+' FCFA' : null]
+    ].filter(([,value])=>value!==null && value!==undefined && value!=='');
+    const summary=document.createElement('section');
+    summary.className='tx-confirm-preview';
+    summary.setAttribute('role','status');
+    summary.innerHTML='<strong>Confirmer avant comptabilisation</strong>'+
+      '<p>Vérifiez les informations. Aucun compte n’est modifié avant la deuxième validation.</p>'+
+      '<dl>'+detail.map(([name,value])=>'<div><dt>'+esc(name)+'</dt><dd>'+esc(String(value))+'</dd></div>').join('')+'</dl>';
+    form.querySelector(':scope > .actions')?.before(summary);
+    form.dataset.finalConfirmed='yes';
+    const button=form.querySelector('button[type=submit]');
+    button.textContent='Confirmer et comptabiliser';
+    button.focus();
+    return true;
+  }
+  function clearTransactionConfirmation(form) {
+    if(!form||form.dataset.finalConfirmed!=='yes') return;
+    delete form.dataset.finalConfirmed;
+    form.querySelector('.tx-confirm-preview')?.remove();
+    const button=form.querySelector('button[type=submit]');
+    if(button) button.textContent='Comptabiliser';
+  }
+  const removableTransaction=t=>Boolean(t && !['SPLIT','CORRECTION'].includes(t.type) &&
+    !t.orderId && !t.eventId && !db.transactions.some(other=>other.corrects===t.id||other.reinvests===t.id));
+  const visibleArchives=()=>db.history.map((item,index)=>({item,index}))
+    .filter(({item})=>item.kind!=='AUDIT_RETRAIT');
   function journalRow(t) {
     let value='—';
     if(['BUY','SELL'].includes(t.type)) value=fc(F.tradeAmounts(t).total/100);
@@ -925,6 +967,7 @@
     e.preventDefault();
     const type=form.dataset.form, id=form.dataset.id;
     if(busy||(!db&&!['unlock','reset'].includes(type))) return;
+    if(type==='tx' && transactionConfirmation(form)) return;
     busy=true;
     const f=new FormData(form);
     const feedback=$('#modal[open] .modal-error')||$('#view form[data-form=unlock] + .modal-error');
@@ -1188,11 +1231,15 @@
   });
   document.addEventListener('input',e=>{
     const form=e.target.closest('form[data-form=tx]');
-    if(form && ['qty','price','broker','other','tax'].includes(e.target.name)) tradePreview(form);
+    if(form) {
+      clearTransactionConfirmation(form);
+      if(['qty','price','broker','other','tax'].includes(e.target.name)) tradePreview(form);
+    }
   });
   document.addEventListener('change',e=>{
     const el=e.target;
     if(!db) return;
+    if(el.closest('form[data-form=tx]')) clearTransactionConfirmation(el.closest('form[data-form=tx]'));
     if(el.matches('form[data-form=invest] [name=mode]')) {
       const options=el.form.querySelector('[data-manual]');
       options.hidden=el.value!=='manuel';
