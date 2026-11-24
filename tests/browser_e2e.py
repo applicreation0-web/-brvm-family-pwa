@@ -82,7 +82,7 @@ def check(first, second):
         expect(dialog.get_by_text('Sauvegarde mensuelle obligatoire :')).to_be_visible()
         dialog.get_by_role('button', name='Fermer').click()
         with page.expect_download() as backup_download:
-            page.get_by_role('button', name='Sauvegarde mensuelle JSON · À effectuer').click()
+            page.locator('.backup-banner').get_by_role('button', name='Sauvegarder et vérifier').click()
         backup=backup_download.value.path().read_bytes()
         with zipfile.ZipFile(BytesIO(backup)) as archive:
             names=archive.namelist()
