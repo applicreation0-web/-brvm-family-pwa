@@ -247,7 +247,7 @@
     modal('Modifier mes données et mes actions',
       '<p class="quiet">Tu peux changer les actions du CORE, leurs pourcentages et les données de marché. Aucun achat, vente, solde ou historique n’est modifié par un changement de cibles.</p>'+
       '<div class="manual-shortcuts" aria-label="Modifications manuelles">'+
-        btn('manual-quote','Cours / prix')+btn('foundation','Données émetteur')+
+        btn('manual-quote','Cours / prix')+btn('refresh','Mettre à jour les cours')+btn('foundation','Données émetteur')+
         btn('instrument','Nom / fiche action')+btn('quote-import','Importer des cours')+
         btn('import','Importer mon JSON')+btn('manual-manage-data','Sauvegardes')+
       '</div>'+
