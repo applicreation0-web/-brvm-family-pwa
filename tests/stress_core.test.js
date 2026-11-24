@@ -129,3 +129,27 @@ test('STRESS06 : limite des entrées et objets malformés, pas de crash ni modif
   assert.throws(()=>F.updateCoreTargets(d,'portfolio-a',Array(14).fill(good[0])));
   assert.equal(JSON.stringify(d),baseline);
 });
+
+test('STRESS07 : simulation de rééquilibrage suit les nouvelles cibles sans créer un achat',()=>{
+  const d=fixture();
+  d.quotes.TEST={price:1000,date:F.today(),source:'Cours fictif du test',basis:'manual',status:'active'};
+  const next=F.updateCoreTargets(d,'portfolio-a',[{symbol:'TEST',weightPct:'100'}]);
+  const before=lockedSnapshot(next);
+  const p=F.propose(next,{portfolioId:'portfolio-a',
+    accountIds:['account-a1','account-a2'],mode:'cibles',budget:10000,now:F.today()});
+  assert(p.lines.length>0);
+  assert(p.lines.every(x=>x.symbol==='TEST' && x.qty>0 && x.broker>=0));
+  assert.equal(p.targets.TEST,1);
+  assert.equal(lockedSnapshot(next),before);
+  assert.equal(next.transactions.length,0);
+  assert.equal(next.orders.length,0);
+});
+test('STRESS08 : prix manquant sur position ciblée ou compte étranger interdit la simulation',()=>{
+  const d=fixture(), baseline=JSON.stringify(d);
+  const next=F.updateCoreTargets(d,'portfolio-a',[{symbol:'SNTS',weightPct:'100'}]);
+  assert.throws(()=>F.propose(next,{portfolioId:'portfolio-a',accountIds:['account-a1'],
+    mode:'cibles',budget:10000,now:F.today()}),/Cours manquant/);
+  assert.throws(()=>F.propose(next,{portfolioId:'portfolio-b',accountIds:['account-a1'],
+    mode:'cibles',budget:10000,now:F.today()}),/Sélectionner des comptes/);
+  assert.equal(JSON.stringify(d),baseline);
+});
