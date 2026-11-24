@@ -45,6 +45,7 @@ test('Retrait d’une archive antérieure sans modifier le solde d’ouverture',
 });
 test('Fractions, corrections et justificatifs liés jamais retirés silencieusement',()=>{
   const d=sample();
+  d.positions.push({accountId:'account-test',symbol:'SNTS',qty:1,cost:5000});
   const split={id:'split-test',type:'SPLIT',accountId:'account-test',
     symbol:'SNTS',date:'2026-11-24',brokerRef:'SPLIT-TEST-01',ratioFrom:1,ratioTo:10,
     source:'Avis fictif',status:'CONFIRMED'};
