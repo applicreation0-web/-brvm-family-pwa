@@ -109,6 +109,61 @@ def check(first, second):
         zip_page.locator('#nav [data-page=accounts]').press('Enter')
         expect(zip_page.locator('article h2').filter(has_text='Compte fictif E2E')).to_be_visible()
         zipcontext.close()
+
+        # Les 5 JSON individuels regroupés dans un ZIP DEFLATE standard s'importent
+        # en un seul geste; aucun JSON financier réel n'entre dans le dépôt.
+        synthetic_snapshots=page.evaluate("""() => Array.from({length:5},(_,i)=>{
+          const d=BRVM.empty(), owner='synthetic-u-'+i,portfolio='synthetic-p-'+i,
+            account='synthetic-a-'+i;
+          d.owners.push({id:owner,label:'Propriétaire fictif '+i});
+          d.portfolios.push({id:portfolio,ownerId:owner,label:'Portefeuille fictif '+i,
+            targets:{...BRVMEngine.targets}});
+          d.institutions.push({id:'fictional-sgi',label:'SGI fictive'});
+          d.accounts.push({id:account,portfolioId:portfolio,institutionId:'fictional-sgi',
+            label:'Compte fictif '+i,currency:'XOF',cash:10000+i,reserved:0,
+            monthly:0,brokerRate:0,otherRate:0});
+          d.positions.push({accountId:account,symbol:'SNTS',qty:1,cost:4000+i});
+          d.transactions.push({id:'fractionnement-synthetique-'+i,type:'SPLIT',
+            accountId:account,symbol:'SNTS',date:'2026-10-26',status:'CONFIRMED',
+            brokerRef:'FICTIF_SPLIT_'+i,ratioFrom:1,ratioTo:10,source:'Cas fictif'});
+          BRVM.calculate(d);
+          return d;
+        })""")
+        archive_stream=BytesIO()
+        with zipfile.ZipFile(archive_stream,'w',compression=zipfile.ZIP_DEFLATED) as archive:
+            for i,snapshot in enumerate(synthetic_snapshots):
+                archive.writestr(f'compte_fictif_{i}.json',json.dumps(snapshot))
+        standard_zip=archive_stream.getvalue()
+        multi_context=browser.new_context()
+        multi_page=multi_context.new_page()
+        multi_page.goto(second+'/')
+        multi_page.locator('#import').set_input_files({
+            'name':'FIVE_INDEPENDENT_ACCOUNTS.zip',
+            'mimeType':'application/zip','buffer':standard_zip})
+        expect(multi_page.get_by_role('dialog').get_by_text('5 comptes',exact=False)).to_be_visible()
+        confirm_import(multi_page,initialize=True)
+        multi_account_ids=multi_page.evaluate("""() => {
+          const names=[];
+          return new Promise((resolve,reject)=>{
+            const request=indexedDB.open('brvm-family-v3:'+new URL('./',location.href).pathname,1);
+            request.onsuccess=()=>{
+              const db=request.result,tx=db.transaction('vault','readonly');
+              tx.objectStore('vault').get('current').onsuccess=()=>{
+                // The persisted vault is encrypted: inspect via UI instead.
+                db.close();resolve(true);
+              };
+            };
+            request.onerror=()=>reject(request.error);
+          });
+        }""")
+        assert multi_account_ids is True
+        multi_page.locator('#nav [data-page=accounts]').press('Enter')
+        for i in range(5):
+            multi_page.locator('#portfolio').select_option(f'synthetic-p-{i}')
+            expect(multi_page.locator('article h2').filter(
+                has_text=f'Compte fictif {i}')).to_be_visible()
+        multi_context.close()
+
         page.get_by_role('button', name='Modifier mes données et mes actions').click()
         page.get_by_role('dialog').get_by_role('button', name='Cours / prix').click()
         dialog=page.get_by_role('dialog')
