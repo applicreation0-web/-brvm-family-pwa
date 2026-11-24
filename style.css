@@ -174,9 +174,15 @@ dialog header {position:sticky;top:0;z-index:1;display:flex;justify-content:spac
 .quick-actions {display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0 0 16px}
 .quick-actions button {min-height:52px;border:1px solid #526075;font-weight:750;padding:10px 7px;white-space:normal}
 .quick-actions .primary {border-color:var(--green)}
-.backup-banner {display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid #7e6750;border-radius:12px;background:#2c291f;padding:9px 12px;margin-bottom:13px;font-size:13px}
-.backup-banner span {color:#f3dfb8}
-.backup-banner .primary {min-height:40px}
+/* Confirmation visible, compacte, avant chaque écriture de trésorerie ou de titres. */
+.tx-confirm-preview {border:1px solid var(--line);border-radius:12px;padding:14px;background:rgba(121,193,155,.08);margin:14px 0;line-height:1.5}
+.tx-confirm-preview strong {display:block;margin-bottom:6px}
+.tx-confirm-preview p {margin:4px 0 12px}
+.tx-confirm-preview dl {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:0}
+.tx-confirm-preview dl > div {min-width:0;border-top:1px solid var(--line);padding-top:6px}
+.tx-confirm-preview dt {opacity:.75;font-size:.83rem}
+.tx-confirm-preview dd {margin:2px 0 0;overflow-wrap:anywhere;font-weight:700}
+@media (max-width:520px) {.tx-confirm-preview dl {grid-template-columns:1fr}}
 .allocation-grid {display:grid;grid-template-columns:minmax(225px,2fr) minmax(240px,3fr);gap:20px;align-items:center}
 .allocation-pie-wrap {display:flex;justify-content:center;align-items:center;padding:14px 0}
 .allocation-pie {width:min(100%,310px);aspect-ratio:1;border-radius:50%;display:grid;place-items:center;border:1px solid #5b657a;box-shadow:0 0 0 5px #ffffff09}
@@ -209,8 +215,6 @@ dialog header {position:sticky;top:0;z-index:1;display:flex;justify-content:spac
  .quick-actions {grid-template-columns:repeat(2,minmax(0,1fr))}
  .quick-actions button {min-height:56px}
  .quick-actions button:last-child {grid-column:span 2}
- .backup-banner {font-size:12px;padding:8px;flex-wrap:wrap}
- .backup-banner button {width:100%}
  .allocation-legend li {padding:8px 0}
  .allocation-hole strong {font-size:17px}
  .allocation-pie {width:min(70vw,285px)}
