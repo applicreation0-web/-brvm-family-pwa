@@ -41,7 +41,7 @@ class AndroidPackageTests(unittest.TestCase):
     def test_save_bridge_allows_exact_binary_zip_and_utf8(self):
         asset=(ASSETS/'app.js').read_text()
         begin=asset.index('  function download(value,name,mime=')
-        end=asset.index('  async function exportMonthlyBackup()',begin)
+        end=asset.index('  function exportMonthlyBackup()',begin)
         function=asset[begin:end]
         test_js=r"""
 const assert=require('node:assert/strict');
