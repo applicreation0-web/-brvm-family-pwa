@@ -248,7 +248,7 @@
       '<div class="manual-shortcuts" aria-label="Modifications manuelles">'+
         btn('manual-quote','Cours / prix')+btn('refresh','Mettre à jour les cours')+btn('foundation','Données émetteur')+
         btn('instrument','Nom / fiche action')+btn('quote-import','Importer des cours')+
-        btn('import','Importer mon JSON')+btn('manual-manage-data','Sauvegardes')+
+        btn('import','Importer JSON / ZIP')+btn('manual-manage-data','Sauvegardes')+
       '</div>'+
       '<h3>Actions ciblées du CORE</h3>'+
       form('manual-core', '<div class="manual-core-lines">'+stocks+'</div>'+
