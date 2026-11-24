@@ -159,6 +159,7 @@ def check(first, second):
         assert multi_account_ids is True
         multi_page.locator('#nav [data-page=accounts]').press('Enter')
         for i in range(5):
+            multi_page.locator('#portfolio').select_option(f'synthetic-p-{i}')
             expect(multi_page.locator('article h2').filter(
                 has_text=f'Compte fictif {i}')).to_be_visible()
         multi_context.close()
