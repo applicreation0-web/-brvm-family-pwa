@@ -430,7 +430,7 @@
         TRANSMIS:[['ANNULÉ','Annuler'],['NON EXÉCUTÉ','Non exécuté']],
         'PARTIELLEMENT EXÉCUTÉ':[['ANNULÉ','Annuler le reliquat']], 'EXÉCUTÉ':[['RAPPROCHÉ','Rapprocher']]};
       return [`<b>${o.side==='SELL'?'Vente':'Achat'} · ${esc(o.symbol)}</b><br><small>${esc(accName(o.accountId))}</small>`,tag(o.status,o.status==='RAPPROCHÉ'?'ok':'wait'),
-        `${fmt.format(executed)} / ${fmt.format(o.qty)}<br><small>Limite indicative ${fc(o.limit)}</small>`,
+        `${fmt.format(executed)} / ${fmt.format(o.qty)}<br><small>${o.orderType==='MARKET'?'Au marché (prix non garanti) · référence '+fc(o.referencePrice||o.limit):'Cours limite '+fc(o.limit)}</small>`,
         `<div class="actions">${['TRANSMIS','PARTIELLEMENT EXÉCUTÉ'].includes(o.status)?btn('order-fill','Saisir l’avis',o.id,'primary'):''}
         ${(actions[o.status]||[]).map(([status,label])=>btn('order-state',label,o.id+'|'+status)).join('')}
         ${btn('order-trace','Voir le suivi',o.id)}</div>`];
@@ -1078,6 +1078,26 @@
     let next, message='Enregistré sur cet appareil.', replace=false, page;
     try {
       switch(type) {
+        case 'buy-budget': {
+          const accountId=f.get('accountId'),budget=number(f,'budget');
+          const base=F.proposeBuyBudget(db,{accountId,budget,verifiedOnly:f.has('verifiedOnly')});
+          guidedBuy={accountId,budget,revision:record.revision,base};
+          showGuidedBuyProposal();
+          return;
+        }
+        case 'buy-create': {
+          if(!guidedBuy || guidedBuy.revision!==record.revision)
+            throw Error('Les données ont changé : relancez Acheter.');
+          if(!f.has('acknowledge')) throw Error('Confirmez les projets d’ordres.');
+          const proposed=F.priceBuyBudget(db,{accountId:guidedBuy.accountId,
+            budget:guidedBuy.budget,lines:guidedBuyRows(form)});
+          next=F.createPlan(db,proposed);
+          portfolioId=proposed.portfolioId;
+          plan=null;planInputs=null;
+          page='invest';
+          message='Projets d’ordres enregistrés, sans transmission SGI. Débit estimé : '+fc(proposed.spent)+'.';
+          break;
+        }
         case 'remove-tx': {
           if(!f.has('confirmed')) throw Error('Confirmez le retrait de cette écriture.');
           if(Number(f.get('revision'))!==record.revision) throw Error('Les données ont changé : rouvrez le retrait.');
@@ -1344,11 +1364,14 @@
       if(replace) planInputs=null;
       if($('#modal').open) close();
       if(page) goTo(page); else render();
+      if(type==='buy-create') {const section=$('.operations-orders');if(section) section.open=true;}
       notify(message);
     } catch(err) {showError(err);}
     finally {busy=false;}
   });
   document.addEventListener('input',e=>{
+    const buy=e.target.closest('form[data-form="buy-create"]');
+    if(buy) updateGuidedBuyTotals(buy);
     const form=e.target.closest('form[data-form=tx]');
     if(form) {
       clearTransactionConfirmation(form);
@@ -1358,6 +1381,8 @@
   document.addEventListener('change',e=>{
     const el=e.target;
     if(!db) return;
+    const buy=el.closest('form[data-form="buy-create"]');
+    if(buy) updateGuidedBuyTotals(buy);
     if(el.closest('form[data-form=tx]')) clearTransactionConfirmation(el.closest('form[data-form=tx]'));
     if(el.matches('form[data-form=invest] [name=mode]')) {
       const options=el.form.querySelector('[data-manual]');
