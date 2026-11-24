@@ -599,7 +599,8 @@
       esc(t.brokerRef)+(t.note?'<br><small>'+esc(t.note)+'</small>':''),
       `<div class="actions">${btn('tx-detail','Détail',t.id)}${t.attachmentId?btn('attachment','Télécharger la pièce',t.attachmentId):''}
       ${t.type==='DIVIDEND'&&!db.transactions.some(x=>x.corrects===t.id)?btn('reinvest','Réinvestir sur avis',t.id):''}
-      ${['DEPOSIT','WITHDRAW','FEE','TRANSFER','BUY','SELL','DIVIDEND','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY'].includes(t.type)&&!db.transactions.some(x=>x.corrects===t.id)?btn('correct','Rectifier',t.id):''}</div>`];
+      ${['DEPOSIT','WITHDRAW','FEE','TRANSFER','BUY','SELL','DIVIDEND','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY'].includes(t.type)&&!db.transactions.some(x=>x.corrects===t.id)?btn('correct','Rectifier',t.id):''}
+      ${removableTransaction(t)?btn('remove-tx','Retirer',t.id):''}</div>`];
   }
   function historyView() {
     const p=getPortfolio();
@@ -617,11 +618,12 @@
       ${pane('Journal des écritures locales',`<div class="context compact">${field('month','Filtrer par mois',input('month',historyMonth,'month','id="history-month"'))}<span class="quiet">${txs.length} écritures</span></div>`+
         table(['Date','Compte','Opération','Montant','Référence','Actions'],txs.slice(0,journalLimit).map(journalRow))+
         (txs.length>journalLimit?`<div class="actions">${btn('history-more','Afficher 40 écritures de plus')}</div>`:''))}
-      ${pane('Archives comprises dans le solde d’ouverture',table(['Date','Compte','Opération','Justificatif / état','Montant'],db.history.slice().reverse().slice(0,archiveLimit).map(t=>[
+      ${pane('Archives comprises dans le solde d’ouverture',table(['Date','Compte','Opération','Justificatif / état','Montant','Actions'],visibleArchives().reverse().slice(0,archiveLimit).map(({item:t,index})=>[
         F.date(t.date)?showDate(t.date):'—',esc(accName(t.accountId)),esc(labels[t.type]||t.kind||t.type||'')+(t.symbol?' · '+esc(t.symbol):''),
-        esc([t.reference,t.status,t.note].filter(Boolean).join(' · '))+(t.attachmentId?' '+btn('attachment','Télécharger la pièce',t.attachmentId):''),typeof (t.actualTotal??t.amount)==='number'?fc(t.actualTotal??t.amount):'—']))+
-        (db.history.length>archiveLimit?`<div class="actions">${btn('archive-more','Afficher 40 archives de plus')}</div>`:''),
-        'Consultation uniquement. Les écritures historiques sont déjà incluses dans les soldes d’ouverture.')}
+        esc([t.reference,t.status,t.note].filter(Boolean).join(' · '))+(t.attachmentId?' '+btn('attachment','Télécharger la pièce',t.attachmentId):''),typeof (t.actualTotal??t.amount)==='number'?fc(t.actualTotal??t.amount):'—',
+        t.type==='SPLIT'?'—':btn('remove-archive','Retirer',String(index))]))+
+        (visibleArchives().length>archiveLimit?'<div class="actions">'+btn('archive-more','Afficher 40 archives de plus')+'</div>':''),
+        'Ces archives sont déjà incluses dans les soldes d’ouverture. Retirer une ligne ne modifie aucun solde ; une trace privée reste conservée.')}
     `;
   }
   function dataView() {
@@ -881,6 +883,34 @@
             '<label class="check"><input name="included" type="checkbox" required> Le relevé confirme que l’opération est incluse dans la photographie.</label>',
             'Ajouter le rapprochement à l’archive'));break;
         case 'correct': {const t=db.transactions.find(x=>x.id===id);transaction('CORRECTION',{accountId:t.accountId,corrects:id});break;}
+        case 'remove-tx': {
+          const t=db.transactions.find(x=>x.id===id);
+          if(!removableTransaction(t)) throw Error('Cette écriture a une opération liée. Utilisez la rectification prévue.');
+          modal('Confirmer le retrait de l’écriture',
+            form('remove-tx',
+              '<p><strong>'+esc(labels[t.type]||t.type)+'</strong> · '+showDate(t.date)+'</p>'+
+              '<p>'+esc(accName(t.accountId))+' · Référence : '+esc(t.brokerRef)+'</p>'+
+              '<p>Le retrait recalcule les espèces, titres et frais. Une écriture dépendante bloque le retrait. Une trace non visible reste dans l’audit privé.</p>'+
+              field('reason','Motif du retrait',input('reason','','text','required minlength="5" maxlength="200"'))+
+              '<label class="check"><input type="checkbox" name="confirmed" required> Je confirme le retrait de cette écriture.</label>'+
+              '<input type="hidden" name="revision" value="'+record.revision+'">',
+              'Confirmer le retrait',id));
+          break;
+        }
+        case 'remove-archive': {
+          const index=Number(id),t=db.history[index];
+          if(!Number.isSafeInteger(index)||!t||t.kind==='AUDIT_RETRAIT'||t.type==='SPLIT') throw Error('Cette archive ne peut pas être retirée.');
+          modal('Confirmer le retrait de l’archive',
+            form('remove-archive',
+              '<p><strong>'+esc(labels[t.type]||t.kind||t.type||'Archive')+'</strong> · '+(F.date(t.date)?showDate(t.date):'Date non précisée')+'</p>'+
+              '<p>'+esc(accName(t.accountId))+'</p>'+
+              '<p>Cette archive est déjà incluse dans les soldes d’ouverture. Son retrait de la liste ne change aucun montant ni titre. Une trace reste dans l’audit privé.</p>'+
+              field('reason','Motif du retrait',input('reason','','text','required minlength="5" maxlength="200"'))+
+              '<label class="check"><input type="checkbox" name="confirmed" required> Je confirme le retrait de cette archive.</label>'+
+              '<input type="hidden" name="revision" value="'+record.revision+'">',
+              'Confirmer le retrait',id));
+          break;
+        }
         case 'tx-detail': {
           const t=db.transactions.find(x=>x.id===id);
           const info=['Date '+showDate(t.date),'Référence '+t.brokerRef,t.note,t.source,t.override,t.corrects?'Rectifie '+t.corrects:'',t.reinvests?'Dividende d’origine '+(db.transactions.find(x=>x.id===t.reinvests)?.brokerRef||''):''].filter(Boolean);
@@ -975,6 +1005,22 @@
     let next, message='Enregistré sur cet appareil.', replace=false, page;
     try {
       switch(type) {
+        case 'remove-tx': {
+          if(!f.has('confirmed')) throw Error('Confirmez le retrait de cette écriture.');
+          if(Number(f.get('revision'))!==record.revision) throw Error('Les données ont changé : rouvrez le retrait.');
+          next=F.removeJournalEntry(db,id,trim(f,'reason'));
+          message='Écriture retirée du journal. Soldes recalculés ; trace privée conservée.';
+          page='history';
+          break;
+        }
+        case 'remove-archive': {
+          if(!f.has('confirmed')) throw Error('Confirmez le retrait de cette archive.');
+          if(Number(f.get('revision'))!==record.revision) throw Error('Les données ont changé : rouvrez le retrait.');
+          next=F.removeArchiveEntry(db,Number(id),trim(f,'reason'));
+          message='Archive retirée de la liste. Soldes inchangés ; trace privée conservée.';
+          page='history';
+          break;
+        }
         case 'core-review': {
           if(!f.has('confirmed')) throw Error('Confirmez que vous avez examiné les informations disponibles.');
           next=R.acknowledge(db,id);
