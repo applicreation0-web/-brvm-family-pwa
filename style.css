@@ -348,3 +348,18 @@ dialog header {position:sticky;top:0;z-index:1;display:flex;justify-content:spac
 .manual-core-line input {min-width:0;width:100%}
 .dialog-body h3 {font-size:17px;line-height:1.3;margin:12px 0 8px}
 @media(max-width:460px){.manual-core-line {grid-template-columns:minmax(0,1fr) 95px;gap:7px}.manual-editor-access button {width:100%}}
+
+/* Guided budget-based buy proposals, deliberately compact on Android. */
+.buy-proposal-line {padding:13px 0;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.buy-proposal-line>strong {font-size:15px}
+.buy-proposal-line>p {margin:0}
+.buy-proposal-controls {display:grid;grid-template-columns:90px minmax(130px,1fr) minmax(130px,1fr);gap:9px;align-items:end}
+.buy-proposal-controls .field {min-width:0}
+.buy-proposal-controls input,.buy-proposal-controls select {width:100%;min-width:0}
+.buy-proposal-controls [data-limit-field][hidden] {display:none}
+.buy-budget-totals {margin:16px 0 8px;padding:12px;border:1px solid var(--line);border-radius:10px;line-height:1.5}
+.buy-budget-totals>strong {display:block;font-size:16px}
+.buy-budget-totals p {margin:5px 0}
+.buy-risk {border-left:3px solid #eab308;padding:8px 10px;background:#302c1c}
+.buy-budget-totals.buy-invalid {border-color:#b95e68;color:#ffafb8}
+@media (max-width:680px) {.buy-proposal-controls {grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.buy-proposal-controls [data-limit-field] {grid-column:1/-1}}
