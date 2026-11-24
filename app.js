@@ -31,6 +31,7 @@
   let importRevision, mergedImport, importReadTicket=0, pendingBackup=null;
   let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
+  const coreSymbols=p=>Object.keys(p?.targets||E.targets);
   const findAccount=id=>db.accounts.find(x=>x.id===id);
   const institution=id=>db.institutions.find(x=>x.id===id)?.label||'—';
   const accName=id=>{
@@ -181,11 +182,11 @@
         colorOf(x.symbol)+' '+(from+gap).toFixed(5)+'% '+(start-gap).toFixed(5)+'%',
         '#171b23 '+(start-gap).toFixed(5)+'% '+start.toFixed(5)+'%'];
     }).join(', ');
-    const core=E.symbols.reduce((n,x)=>n+(holdings.get(x)||0),0);
+    const core=coreSymbols(p).reduce((n,x)=>n+(holdings.get(x)||0),0);
     const legend=entries.map(x=>{
       const actual=x.value/total;
-      const coreWeight=E.symbols.includes(x.symbol)&&core>0?(holdings.get(x.symbol)||0)/core:null;
-      const target=E.symbols.includes(x.symbol)?p.targets[x.symbol]:null;
+      const coreWeight=coreSymbols(p).includes(x.symbol)&&core>0?(holdings.get(x.symbol)||0)/core:null;
+      const target=coreSymbols(p).includes(x.symbol)?p.targets[x.symbol]:null;
       return `<li><span class="allocation-name"><i style="background:${colorOf(x.symbol)}" aria-hidden="true"></i><b>${esc(x.symbol)}</b><small>${esc(E.names[x.symbol]||'')}</small></span>
         <span class="allocation-value"><strong>${pct(actual)}</strong><small>${fc(x.value)}</small>${db.quotes[x.symbol]?'<small>Cours '+showDate(db.quotes[x.symbol].date)+(F.stale(db.quotes[x.symbol],db.settings.staleDays)?' · ancien':'')+'</small>':''}${target!=null?'<small>CORE : '+pct(coreWeight)+' / cible '+pct(target)+'</small>':''}</span></li>`;
     });
@@ -209,16 +210,16 @@
       ${btn('apply-core-targets','Rétablir les objectifs CORE validés','','primary')}</section>`;
   }
   function coreProgress(p) {
-    const actual=Object.fromEntries(E.symbols.map(s=>[s,selectedSgiAccounts(p).reduce((sum,a)=>sum+(a.positions[s]?.market||0),0)]));
+    const actual=Object.fromEntries(coreSymbols(p).map(s=>[s,selectedSgiAccounts(p).reduce((sum,a)=>sum+(a.positions[s]?.market||0),0)]));
     const known=Object.values(actual).reduce((n,v)=>n+v,0);
-    const rows=E.symbols.map(s=>{
+    const rows=coreSymbols(p).map(s=>{
       const weight=known?actual[s]/known:0, target=p.targets[s], diff=weight-target;
       const width=Math.min(100,Math.round(weight*100)),targetWidth=Math.min(100,Math.round(target*100));
       return `<div class="core-progress">
         <div class="core-line"><strong>${esc(s)}</strong><span>${known?pct(weight):'—'} · cible ${pct(target)} · écart ${known?(diff>=0?'+':'')+pct(diff):'—'}</span></div>
         <div class="core-track" aria-label="${esc(s)} actuellement ${pct(weight)}, cible ${pct(target)}"><span style="width:${width}%"></span><i style="left:${targetWidth}%"></i></div></div>`;
     }).join('');
-    const missing=selectedSgiAccounts(p).some(a=>E.symbols.some(sym=>(a.positions[sym]?.qty||0)>0 && !(a.positions[sym]?.price>0)));
+    const missing=selectedSgiAccounts(p).some(a=>coreSymbols(p).some(sym=>(a.positions[sym]?.qty||0)>0 && !(a.positions[sym]?.price>0)));
     return `<article class="pane"><div class="pane-head"><h2>CORE · ${esc(sgiFilter?institution(sgiFilter):'Toutes les SGI')} face aux cibles du portefeuille</h2><p>Le trait clair indique la cible, la barre représente le poids réel dans les actions CORE.</p></div>
       ${known?rows:empty('Aucune action CORE valorisée. Importez d’abord les cours.')}
       ${missing?'<p class="quiet">Cours manquants : les pourcentages sont incomplets.</p>':''}
@@ -421,7 +422,7 @@
     const rows=p.accounts.map(a=>[esc(accName(a.id)),fc(a.current),fc(a.cash),fc(a.fees),fc(a.cashRemaining),fc(a.forecast)]);
     const fees=p.lines.reduce((n,l)=>n+l.broker+l.other,0);
     const spent=p.lines.reduce((n,l)=>n+l.total,0);
-    const coreRows=E.symbols.map(s=>[esc(s)+' · '+esc(E.names[s]||''),pct(p.before[s]),pct(p.targets[s]),pct(p.after[s]),pct(p.after[s]-p.targets[s])]);
+    const coreRows=Object.keys(p.targets).map(s=>[esc(s)+' · '+esc(db.instruments[s]?.label||E.names[s]||''),pct(p.before[s]),pct(p.targets[s]),pct(p.after[s]),pct(p.after[s]-p.targets[s])]);
     return pane('Achats ponctuels simulés',
       `<div class="account-total">${tag('Simulation sans exécution','ok')}<strong>${fc(spent)}</strong><span>Frais estimés inclus : ${fc(fees)}</span></div>
       <p class="quiet">Écart absolu aux cibles : ${pct(p.deviation.before)} avant → ${pct(p.deviation.after)} après. La valeur ne doit pas augmenter fictivement du montant dépensé : seul le coût des frais la réduit.</p>
