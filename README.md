@@ -1,3 +1,10 @@
+# BRVM Family V3.6.3 — ZIP de cinq comptes importable en une fois
+- Correction de l’import : un ZIP standard (compression DEFLATE ou STORE) contenant plusieurs JSON individuels est lu, contrôlé par CRC/taille, puis fusionné en un seul portefeuille familial **après confirmation de l’utilisateur**. Les sauvegardes mensuelles historiques BRVM_COMPLET.json + MANIFESTE.json restent compatibles.
+- Fractionnements : une même opération de marché (même symbole/date/ratio) peut figurer sur chaque compte sans que la fusion rejoue ni duplique les titres. Les ratios divergents, comptes dupliqués, archives corrompues et ZIP incomplets sont refusés.
+- Aucun JSON privé/compte réel n’est commité dans le dépôt, les recettes se font sur cinq comptes fictifs.
+- Les données existantes sont protégées : aperçu avant validation, fusion uniquement si strictement compatible, remplacement soumis à confirmation expresse. Sauvegarder toute modification locale avant restauration.
+- APK Android : le build CI reste volontairement non signé dans le dépôt public. Les clés privées ne sont jamais présentes dans GitHub.
+
 # BRVM Family V3.6.2 — audit de résistance du CORE manuel
 
 ## Contrôle qualité reproductible (GitHub Actions)
