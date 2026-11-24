@@ -231,6 +231,32 @@
       ${btn('dividend-received','Dividende')}${btn('corporate-action','Événements')}
       ${btn('monthly-backup','Sauvegarder')}</nav>`;
   }
+  function manualEditor() {
+    const p=getPortfolio();
+    if(!p) throw Error('Sélectionnez un portefeuille avant de modifier les actions.');
+    const current=Object.entries(p.targets);
+    const rows=[...current,...(current.length<12?[['','']]:[])];
+    const stocks=rows.map(([symbol,target],i)=>
+      '<div class="manual-core-line">'+
+      field('core_symbol_'+i,'Action '+(i+1)+' · symbole',
+        input('core_symbol_'+i,symbol,'text','maxlength="18" autocapitalize="characters" placeholder="Ex. SNTS"'))+
+      field('core_weight_'+i,'Cible %',
+        input('core_weight_'+i,symbol?Math.round(target*10000)/100:'','number','step="0.01" min="0" max="100" placeholder="0"))+
+      '</div>').join('');
+    modal('Modifier mes données et mes actions',
+      '<p class="quiet">Tu peux changer les actions du CORE, leurs pourcentages et les données de marché. Aucun achat, vente, solde ou historique n’est modifié par un changement de cibles.</p>'+
+      '<div class="manual-shortcuts" aria-label="Modifications manuelles">'+
+        btn('manual-quote','Cours / prix')+btn('foundation','Données émetteur')+
+        btn('instrument','Nom / fiche action')+btn('quote-import','Importer des cours')+
+        btn('import','Importer mon JSON')+btn('manual-manage-data','Sauvegardes')+
+      '</div>'+
+      '<h3>Actions ciblées du CORE</h3>'+
+      form('manual-core', '<div class="manual-core-lines">'+stocks+'</div>'+
+        '<p class="quiet">Total obligatoire : 100 %. Laisser les deux cases de la dernière ligne vides pour ne pas ajouter de titre. Pour retirer une action, vider les deux cases de sa ligne et répartir son pourcentage sur les autres.</p>'+
+        '<label class="check"><input type="checkbox" name="confirmed" required> Je confirme : seules les cibles CORE changent, jamais mes positions réelles.</label>',
+        'Enregistrer les actions du CORE',p.id)
+    );
+  }
   function coreWatch(p) {
     const review=R.assess(db,p.id);
     const summary=review.due?'Revue semestrielle à examiner': 'Prochaine revue : '+showDate(review.dueOn);
@@ -326,13 +352,12 @@
     const points=db.observations.filter(x=>x.portfolioId===p.id&&x.complete&&x.attestation==='close-v1').sort((a,b)=>a.date.localeCompare(b.date));
     return `<div class="context"><div><p class="overline">Portefeuille ${p.unknown?'· cours incomplets':''}</p><strong class="total">${fc(p.total)}</strong><p class="quiet">${p.accounts.length} compte(s) · Patrimoine familial connu : ${fc(all.total)}</p></div>${portfolioPicker()}</div>
       ${quickActions()}
+      <div class="manual-editor-access">${btn('manual-editor','Modifier mes données et mes actions','','primary')}</div>
       ${allocationVisual(p)}
       <div class="kpis">${kpi('Patrimoine du portefeuille',fc(p.total),p.unknown?'Valeur partielle':'Titres et liquidités','accent')}${kpi('Cash disponible',fc(p.available),`${fc(p.reserved)} réservés sur ${fc(p.cash)}`)}
       ${kpi('Plus-value latente',fc(p.pnl),p.unknown?'Positions cotées uniquement':`Coût réel des titres · ${fc(p.cost)}`,p.pnl<0?'loss':'gain')}
       ${kpi('Dividendes nets reçus',fc(p.dividends),`${fc(p.grossDividends)} bruts depuis l’ouverture`)}</div>
-      ${targetNotice(p)}
-      ${coreProgress(p)}
-      ${coreWatch(p)}
+
       ${points.length>1?pane('Évolution du patrimoine',curve(points),'Valeurs historiques validées et comparables'):''}
       <details class="dashboard-advanced"><summary>Voir le détail des comptes et des analyses</summary>
       <div class="split">${pane('Répartition par SGI',bars(calc.institutions.map(i=>({label:i.label,value:p.accounts.filter(a=>a.institutionId===i.id).reduce((n,a)=>n+(a.totalXof??0),0)}))))}</div>
@@ -855,6 +880,8 @@
           break;
         case 'quote-import': $('#quote-import').click(); break;
         case 'manual-quote': manualQuote(); break;
+        case 'manual-editor': manualEditor(); break;
+        case 'manual-manage-data': close();goTo('data');break;
         case 'ack-core-review': {
           const p=getPortfolio();
           if(!p || p.id!==id) throw Error('Portefeuille introuvable.');
@@ -1172,6 +1199,36 @@
           i.fundamentals={date:f.get('date'),source:trim(f,'source'),risk:trim(f,'risk')};
           for(const key of ['per','revenue','earnings','growth','margin','yield','volume','turnover'])
             if(trim(f,key)!=='') i.fundamentals[key]=number(f,key);
+          break;
+        }
+        case 'manual-core': {
+          if(!f.has('confirmed')) throw Error('Confirmez le changement des cibles.');
+          const source=db.portfolios.find(p=>p.id===id);
+          if(!source) throw Error('Portefeuille introuvable.');
+          const count=Object.keys(source.targets).length+(Object.keys(source.targets).length<12?1:0);
+          const targets=Object.create(null);
+          for(let i=0;i<count;i++) {
+            const raw=trim(f,'core_symbol_'+i).toUpperCase();
+            const rawWeight=trim(f,'core_weight_'+i);
+            if(!raw&&!rawWeight) continue;
+            const symbol=F.normalizeSymbol(raw);
+            if(!F.symbol(symbol)||raw!==symbol)
+              throw Error('Symbole de l’action '+(i+1)+' invalide.');
+            if(!/^\\d+(?:\\.\\d{1,2})?$/.test(rawWeight))
+              throw Error('Pourcentage invalide pour '+symbol+' (maximum deux décimales).');
+            const weight=Number(rawWeight)/100;
+            if(weight<0||weight>1||Object.hasOwn(targets,symbol))
+              throw Error('Action en double ou pourcentage invalide : '+symbol);
+            targets[symbol]=weight;
+          }
+          if(!Object.keys(targets).length || Object.keys(targets).length>12 ||
+            Math.abs(Object.values(targets).reduce((a,b)=>a+b,0)-1)>0.000001)
+            throw Error('Les actions doivent représenter exactement 100 %.');
+          next=structuredClone(db);
+          next.portfolios.find(p=>p.id===id).targets={...targets};
+          F.validate(next);
+          plan=null;comparison=null;planInputs=null;
+          message='Cibles CORE modifiées sur cet appareil. Positions et cash inchangés.';
           break;
         }
         case 'targets':
