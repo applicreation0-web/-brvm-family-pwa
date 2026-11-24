@@ -225,7 +225,9 @@
     }
     for (const o of d.orders) {
       fail(index.accounts.get(o.accountId)?.currency==='XOF' && symbol(o.symbol) && Number.isSafeInteger(o.qty) && o.qty>0 &&
-        num(o.limit,.01) && (!o.side || ['BUY','SELL'].includes(o.side)) && statuses.includes(o.status) && date(o.date) && Array.isArray(o.trace), 'Ordre invalide.');
+        num(o.limit,.01) && (!o.orderType || ['LIMIT','MARKET'].includes(o.orderType)) &&
+        (!o.referencePrice || num(o.referencePrice,.01)) &&
+        (!o.side || ['BUY','SELL'].includes(o.side)) && statuses.includes(o.status) && date(o.date) && Array.isArray(o.trace), 'Ordre invalide.');
       cent(o.limit);
     }
     return index;
@@ -698,7 +700,8 @@
     const preview={id:planId,portfolioId:plan.portfolioId,date,mode:plan.mode,forecast:copy(plan.funding)};
     next.plans.push(preview);
     for(const l of plan.lines) next.orders.push({id:id(),planId,accountId:l.accountId,symbol:l.symbol,
-      qty:l.qty,limit:l.price,estimateRate:l.estimateRate,side:l.side||'BUY',date,status:'PROJET',trace:[{date,status:'PROJET'}]});
+      qty:l.qty,limit:l.price,orderType:l.orderType||'LIMIT',referencePrice:l.referencePrice||l.quote?.price||l.price,
+      estimateRate:l.estimateRate,side:l.side||'BUY',date,status:'PROJET',trace:[{date,status:'PROJET'}]});
     calculate(next);
     return next;
   }
@@ -906,6 +909,78 @@
           current:a.total,forecast:a.total+funding[a.id]-fees,fees};
       })};
   }
+
+  // Achat guidé : le budget est affecté à UN seul compte/SGI. Les montants
+  // sont des projets de bourse, jamais des exécutions ni des réservations.
+  function proposeBuyBudget(d,{accountId,budget,now=today(),verifiedOnly=false}) {
+    const all=calculate(d), account=all.accounts.find(a=>a.id===accountId);
+    fail(account && account.currency==='XOF' && !isArchived(d,account),
+      'Sélectionnez un compte SGI actif en FCFA.');
+    fail(Number.isSafeInteger(budget) && budget>0,
+      'Indiquez un montant entier positif en FCFA.');
+    fail(budget<=Math.floor(account.available),
+      'Le budget dépasse les espèces disponibles sur cette SGI. Enregistrez d’abord le versement confirmé.');
+    const suggestion=propose(d,{portfolioId:account.portfolioId,accountIds:[accountId],
+      mode:'cibles',budget,exceptional:true,verifiedOnly,now});
+    if(!suggestion.lines.length)
+      throw Error('Aucune action CORE achetable avec ce budget : vérifiez les cours récents, les titres autorisés et le montant.');
+    const raw=suggestion.lines.map(l=>({
+      symbol:l.symbol,qty:l.qty,orderType:'LIMIT',limitPrice:l.price
+    }));
+    return {suggestion,...priceBuyBudget(d,{accountId,budget,lines:raw,now})};
+  }
+  // Recalcule en centimes exactement les lignes modifiées et refuse tout
+  // dépassement de budget, y compris les frais du compte configurés.
+  // Un ordre MARKET reste une estimation : il n'a PAS de prix maximum.
+  function priceBuyBudget(d,{accountId,budget,lines,now=today()}) {
+    const all=calculate(d),a=all.accounts.find(x=>x.id===accountId);
+    fail(a && a.currency==='XOF' && !isArchived(d,a), 'Compte SGI indisponible.');
+    fail(Number.isSafeInteger(budget) && budget>0 && budget<=Math.floor(a.available),
+      'Montant supérieur au cash réellement disponible sur cette SGI.');
+    const portfolio=d.portfolios.find(p=>p.id===a.portfolioId);
+    fail(Array.isArray(lines) && lines.length>=1 && lines.length<=12,
+      'Entre 1 et 12 propositions sont autorisées.');
+    const seen=new Set(),outputs=[];
+    let totalCents=0,feeCents=0;
+    for(const row of lines) {
+      const sym=normalizeSymbol(String(row?.symbol||'').trim().toUpperCase());
+      const quantity=Number(row?.qty),kind=row?.orderType;
+      fail(symbol(sym) && portfolio.targets[sym]>0 &&
+        eligibleCoreSymbol(d,sym) && !seen.has(sym),
+        'Action CORE non admissible ou présente deux fois : '+sym);
+      seen.add(sym);
+      const quote=d.quotes[sym];
+      fail(quote && !stale(quote,d.settings.staleDays,now) &&
+        (quote.status===undefined || quote.status==='active') &&
+        ['official','provisional','manual'].includes(quote.basis) &&
+        !d.transactions.some(t=>t.type==='SPLIT'&&t.symbol===sym&&t.date>quote.date),
+        'Cours manquant, périmé ou suspendu : '+sym);
+      fail(Number.isSafeInteger(quantity) && quantity>=1 && quantity<=1000000,
+        'Quantité entière positive obligatoire : '+sym);
+      fail(kind==='LIMIT'||kind==='MARKET', 'Type d’ordre invalide : '+sym);
+      const limit=Number(row.limitPrice);
+      fail(kind==='MARKET'||Number.isSafeInteger(limit) && limit>0 && limit<=100000000,
+        'Indiquez un cours limite entier en FCFA pour '+sym);
+      const price=kind==='LIMIT'?limit:quote.price;
+      const amountCents=cent(price*quantity);
+      const brokerCents=Math.floor(amountCents*a.brokerRate+1e-7);
+      const otherCents=Math.floor(amountCents*a.otherRate+1e-7);
+      const lineTotal=amountCents+brokerCents+otherCents;
+      fail(Number.isSafeInteger(lineTotal) && lineTotal>0,'Calcul des frais invalide.');
+      totalCents+=lineTotal;feeCents+=brokerCents+otherCents;
+      fail(Number.isSafeInteger(totalCents), 'Total d’achat trop important.');
+      outputs.push({accountId,symbol:sym,qty:quantity,price,referencePrice:quote.price,
+        orderType:kind,estimateRate:a.brokerRate+a.otherRate,
+        quote,amount:amountCents/100,broker:brokerCents/100,other:otherCents/100,
+        total:lineTotal/100,reason:'Réduire le déficit aux cibles CORE'});
+    }
+    fail(totalCents<=budget*100 && totalCents<=Math.floor(a.available*100+1e-7),
+      'Total prévisionnel frais compris supérieur au budget ou au cash disponible. Réduisez la quantité ou le prix limite.');
+    return {portfolioId:a.portfolioId,accountId,budget,mode:'cibles',funding:{[accountId]:0},
+      lines:outputs,spent:totalCents/100,fees:feeCents/100,remaining:(budget*100-totalCents)/100,
+      cashAvailable:a.available,guaranteed:outputs.every(l=>l.orderType==='LIMIT')};
+  }
+
   // Retirer une saisie incorrecte uniquement si le livre recalculé reste valide.
   // L'opération originale demeure dans une piste d'audit privée, hors du
   // journal visible et sans aucun effet sur le calcul des soldes/positions.
@@ -947,6 +1022,6 @@
     calculate(next);
     return next;
   }
-  return {schema,empty,migrate,validate,calculate,record,removeJournalEntry,removeArchiveEntry,reconcileOpening,reviseOpening,propose,isArchived,createPlan,orderTransition,
+  return {schema,empty,migrate,validate,calculate,record,removeJournalEntry,removeArchiveEntry,reconcileOpening,reviseOpening,propose,proposeBuyBudget,priceBuyBudget,isArchived,createPlan,orderTransition,
     quoteUpdates,stale,validateAttachment,currencies,fxRate,changeRate,screening,normalizeSymbol,eligibleCoreSymbol,updateCoreTargets,id,today,cent,date,symbol,kinds,statuses,isFund,tradeAmounts,equate};
 });
