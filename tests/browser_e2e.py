@@ -247,6 +247,34 @@ def check(first, second):
         expect(manual).not_to_be_visible()
         assert page.locator('.total').text_content()==original_total
 
+        # Contrôles négatifs sur le formulaire réel : aucune mutation en cas de saisie fausse.
+        editor_button.click()
+        manual=page.get_by_role('dialog')
+        manual.locator('[name=core_weight_0]').fill('30.01')
+        manual.locator('[name=confirmed]').check()
+        manual.locator('button[type=submit]').click()
+        expect(manual.locator('.modal-error')).to_contain_text('exactement 100 %')
+        assert page.locator('.total').text_content()==original_total
+        manual.locator('[name=core_weight_0]').fill('30')
+        manual.locator('[name=core_symbol_7]').fill('SNTS')
+        manual.locator('[name=core_weight_7]').fill('1')
+        manual.locator('button[type=submit]').click()
+        expect(manual.locator('.modal-error')).to_contain_text('doublon')
+        manual.locator('[name=core_symbol_7]').fill('SGBC')
+        manual.locator('button[type=submit]').click()
+        expect(manual.locator('.modal-error')).to_contain_text('exclue')
+        manual.locator('[name=core_symbol_7]').fill('')
+        manual.locator('[name=core_weight_7]').fill('')
+        # Alias de marché TTLC normalisé vers TOCI et sauvegardé sans doublon.
+        manual.locator('[name=core_symbol_3]').fill('TTLC')
+        manual.locator('button[type=submit]').click()
+        expect(manual).not_to_be_visible()
+        assert page.locator('.total').text_content()==original_total
+        editor_button.click()
+        manual=page.get_by_role('dialog')
+        expect(manual.locator('[name=core_symbol_3]')).to_have_value('TOCI')
+        manual.get_by_role('button', name='Fermer').click()
+
         # Nouvelle SGI sur le même portefeuille ; zéro achat/dépôt, répartition globale inchangée.
         initial_total=page.locator('.total').text_content()
         original_color=page.locator('.allocation-legend li').filter(has_text='SNTS').first.locator('i').evaluate(
@@ -366,6 +394,55 @@ def check(first, second):
         page.get_by_role('button', name='Déverrouiller').click()
         expect(page.locator('.total')).to_be_visible()
         context.set_offline(False)
+        # Deux onglets synchronisés au même coffre : le second ne doit jamais écraser
+        # silencieusement une version plus récente de la même famille.
+        mirror=context.new_page()
+        mirror.goto(first + '/')
+        vault_bootstrap="""async phrase => {
+          const session=await BRVMVault.start();
+          const rec=session.current.locked?
+            await session.store.unlock(phrase):session.current;
+          window.__stressStore=session.store;
+          window.__stressRecord=rec;
+          return rec.revision;
+        }"""
+        revision_a=page.evaluate(vault_bootstrap,PHRASE)
+        revision_b=mirror.evaluate(vault_bootstrap,PHRASE)
+        assert revision_a==revision_b
+        accepted=page.evaluate("""async () => {
+          const r=window.__stressRecord;
+          const next=structuredClone(r.data);
+          next.settings.staleDays=next.settings.staleDays===31?30:31;
+          const stored=await window.__stressStore.commit(next,r.revision,false);
+          return {revision:stored.revision,days:stored.data.settings.staleDays};
+        }""")
+        assert accepted['revision']==revision_a+1
+        rejected=mirror.evaluate("""async () => {
+          const r=window.__stressRecord;
+          const next=structuredClone(r.data);
+          next.settings.staleDays=200;
+          try {
+            await window.__stressStore.commit(next,r.revision,false);
+            return {rejected:false};
+          } catch (error) {
+            return {rejected:true,message:String(error.message||error)};
+          }
+        }""")
+        assert rejected['rejected'] and 'autre onglet' in rejected['message']
+        actual_revision=mirror.evaluate("""async () => {
+          const r=await window.__stressStore.read('current');
+          return {revision:r.revision,days:r.data.settings.staleDays};
+        }""")
+        assert actual_revision==accepted
+        page.evaluate("window.__stressStore.close()")
+        mirror.evaluate("window.__stressStore.close()")
+        mirror.close()
+        page.reload()
+        page.locator('[name=pass]').fill(PHRASE)
+        page.get_by_role('button', name='Déverrouiller').click()
+        expect(page.locator('.total')).to_be_visible()
+        assert page.locator('.total').text_content()==total
+
         page.locator('#nav [data-page=dashboard]').press('Enter')
         page.get_by_role('button', name='Modifier mes données et mes actions').click()
         page.get_by_role('dialog').get_by_role('button', name='Sauvegardes').click()

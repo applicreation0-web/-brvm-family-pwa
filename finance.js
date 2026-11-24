@@ -10,6 +10,9 @@
   const pending = ['TRANSMIS','PARTIELLEMENT EXÉCUTÉ','EXÉCUTÉ'];
   const statuses = ['PROJET',...pending,'RAPPROCHÉ','ANNULÉ','NON EXÉCUTÉ'];
   const banks = new Set(['SGBC','CBIB']);
+  // This applies only to the user-defined CORE targets; existing legacy holdings are preserved.
+  const coreExcluded = new Set(['SGBC','CBIB','ECOC','SIBC','ETIT','BICB',
+    'BOAB','BOAC','BOAF','BOAM','BOAN','BOAS','STBC']);
   const defaults = { SALAM_CI: 'FCP Salam CI', ALBARAKA2: 'FCP Al Baraka 2' };
   const copy = structuredClone;
   const id = () => globalThis.crypto.randomUUID();
@@ -22,6 +25,14 @@
     Number.isFinite(Date.parse(v)) && new Date(v).toISOString().slice(0, 10) === v;
   const symbol = v => typeof v === 'string' && /^[A-Z][A-Z0-9_]{1,17}$/.test(v) && v !== 'CONSTRUCTOR' && v !== 'PROTOTYPE';
   const normalizeSymbol = v => ({ TTLC: 'TOCI', CBIBF: 'CBIB' }[v] || v);
+  function eligibleCoreSymbol(d,s) {
+    if(!symbol(s) || coreExcluded.has(s)) return false;
+    const i=d.instruments?.[s];
+    if(i?.screen==='Exclu' || (i?.kind && i.kind!=='ACTION')) return false;
+    const title=String(i?.label||E.names[s]||'').normalize('NFD')
+      .replace(/[\u0300-\u036f]/g,'').toUpperCase();
+    return !/\b(BANQUE|BANK|ASSURANCE|TABAC|CIGARETTE|CASINO|LOTERIE|BRASSERIE)\b/.test(title);
+  }
   const cent = v => {
     fail(num(v) && Number.isSafeInteger(Math.round(v * 100)) && Math.abs(v * 100 - Math.round(v * 100)) < 0.001, 'Montant XOF invalide (deux décimales maximum).');
     return Math.round(v * 100);
@@ -142,8 +153,8 @@
       fail(index.owners.has(p.ownerId), 'Propriétaire inconnu.');
       fail(p.targets && typeof p.targets==='object' && !Array.isArray(p.targets) &&
         Object.keys(p.targets).length>=1 && Object.keys(p.targets).length<=12 &&
-        Object.entries(p.targets).every(([s,v])=>symbol(s) && s===normalizeSymbol(s) &&
-          !banks.has(s) && num(v) && v<=1) &&
+        Object.entries(p.targets).every(([s,v])=>symbol(s) &&
+          s===normalizeSymbol(s) && !banks.has(s) && num(v) && v<=1) &&
         Math.abs(Object.values(p.targets).reduce((n,v)=>n+v,0)-1)<0.000001,
         'Actions CORE invalides, exclues, en doublon ou pondérations différentes de 100 %.');
     }
@@ -779,6 +790,41 @@
     const envelopes=equate(totals,budget);
     return Object.fromEntries([...groups].flatMap(([id,list])=>Object.entries(equate(list,envelopes[id]))));
   }
+  // One transactional write: targets only, not transactions, positions, cash, orders or other portfolios.
+  // Store weights as exact basis points (100.00 % = 10000) before persisting fractions.
+  function updateCoreTargets(d,portfolioId,rows) {
+    fail(d?.portfolios?.some(p=>p.id===portfolioId),'Portefeuille CORE introuvable.');
+    fail(Array.isArray(rows) && rows.length>=1 && rows.length<=13,
+      'Liste CORE invalide (12 actions maximum).');
+    const targets=Object.create(null);
+    let basisPoints=0;
+    for(let n=0;n<rows.length;n++) {
+      const row=rows[n];
+      fail(row && typeof row.symbol==='string' &&
+        (typeof row.weightPct==='string' || typeof row.weightPct==='number'),
+        'Ligne CORE invalide.');
+      const raw=row.symbol.trim().toUpperCase(), percent=String(row.weightPct).trim();
+      if(!raw && !percent) continue;
+      const canonical=normalizeSymbol(raw);
+      fail(eligibleCoreSymbol(d,canonical) && canonical===normalizeSymbol(canonical),
+        'Action non reconnue, exclue ou non admissible : '+raw);
+      fail(!Object.hasOwn(targets,canonical),
+        'Action CORE en doublon : '+canonical);
+      fail(/^(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,2})?$/.test(percent),
+        'Pourcentage invalide à la ligne '+(n+1));
+      const bp=Math.round(Number(percent)*100);
+      fail(Number.isSafeInteger(bp) && bp>0 && bp<=10000,
+        'Pourcentage nul ou supérieur à 100 % : '+canonical);
+      targets[canonical]=bp/10000;
+      basisPoints+=bp;
+    }
+    fail(Object.keys(targets).length>=1 && Object.keys(targets).length<=12 &&
+      basisPoints===10000,'Le CORE doit totaliser exactement 100 % sur 1 à 12 actions.');
+    const next=copy(d);
+    next.portfolios.find(p=>p.id===portfolioId).targets={...targets};
+    calculate(next); // Full ledger and referential invariants; no commit on failure.
+    return next;
+  }
   function propose(d,{portfolioId,accountIds,mode='cibles',budget=0,manual={},exceptional=false,verifiedOnly=false,now=today()}) {
     const p=calculate(d).portfolios.find(x=>x.id===portfolioId);
     fail(p && ['cibles','mensuel','equilibre','equilibre-sgi','egalisation','manuel'].includes(mode),'Portefeuille ou mode inconnu.');
@@ -861,5 +907,5 @@
       })};
   }
   return {schema,empty,migrate,validate,calculate,record,reconcileOpening,reviseOpening,propose,isArchived,createPlan,orderTransition,
-    quoteUpdates,stale,validateAttachment,currencies,fxRate,changeRate,screening,normalizeSymbol,id,today,cent,date,symbol,kinds,statuses,isFund,tradeAmounts,equate};
+    quoteUpdates,stale,validateAttachment,currencies,fxRate,changeRate,screening,normalizeSymbol,eligibleCoreSymbol,updateCoreTargets,id,today,cent,date,symbol,kinds,statuses,isFund,tradeAmounts,equate};
 });
