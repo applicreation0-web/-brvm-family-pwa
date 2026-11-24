@@ -1,3 +1,9 @@
+# BRVM Family V3.6.4 — opérations libres, confirmations et retrait sûr du journal
+- Suppression du blocage de sauvegarde mensuelle obligatoire et de la bannière à répétition. Sauvegarde ZIP volontaire disponible en un clic et export chiffré conservé.
+- Deux étapes avant comptabilisation réelle : récapitulatif détaillé, puis **Confirmer et comptabiliser**. Une modification du formulaire annule cette confirmation.
+- Journal et archives : action **Retirer** avec motif et confirmation explicite. Recalcul intégral avant validation, refus des suppressions mettant les espèces, frais ou positions en incohérence, des fractionnements et écritures liées ; trace non affichée conservée dans l’audit JSON privé.
+- Toutes les données financières restent locales et aucune clé de signature ni JSON réel n’est publié dans GitHub.
+
 # BRVM Family V3.6.3 — ZIP de cinq comptes importable en une fois
 - Correction de l’import : un ZIP standard (compression DEFLATE ou STORE) contenant plusieurs JSON individuels est lu, contrôlé par CRC/taille, puis fusionné en un seul portefeuille familial **après confirmation de l’utilisateur**. Les sauvegardes mensuelles historiques BRVM_COMPLET.json + MANIFESTE.json restent compatibles.
 - Fractionnements : une même opération de marché (même symbole/date/ratio) peut figurer sur chaque compte sans que la fusion rejoue ni duplique les titres. Les ratios divergents, comptes dupliqués, archives corrompues et ZIP incomplets sont refusés.
@@ -82,7 +88,7 @@ Le pictogramme original bleu nuit, or et vert d’eau représente le patrimoine 
 - Frais d'achat/vente : courtage réel (contrôlé à 1 % maximum du brut), autres frais, taxes et **montant total du bordereau strictement égal** au montant reconstitué. Le débit de l'achat comprend tous les frais saisis, le crédit de la vente est net des frais saisis.
 - Frais de compte indépendants : « Autres opérations → Frais du compte » avec catégorie (garde/tenue, transfert, taxe distincte, autres), montant réellement débité et référence ; évite de les compter deux fois s'ils sont déjà compris dans le montant net saisi.
 - Estimations CORE : courtage et autres frais proportionnels configurés par compte, **pas** une garantie d'inclure les taxes futures ou les forfaits non configurés. Comparer ensuite l'avis réel et saisir ses composantes ; l'application ne prélève aucun frais.
-- Sauvegarde JSON mensuelle obligatoire et import privé conservés.
+- Sauvegarde JSON facultative et import privé conservés.
 
 ## Ergonomie 3.1 — cinq gestes essentiels
 - **Accueil** : actions directes Acheter, Vendre, Dividende, Opérations sur titres, Sauvegarder. Camembert des actions et espèces, valeur en FCFA, pourcentages; tableau de bord CORE réel/cible; analyses détaillées repliables.
@@ -104,15 +110,10 @@ Le pictogramme original bleu nuit, or et vert d’eau représente le patrimoine 
 ## Confidentialité
 L'application distribuée est **entièrement vierge**. Aucune identité, aucun compte, aucun solde, aucun investissement ou historique personnel n'est intégré au dépôt, au build ni à GitHub Pages. Import JSON volontaire, puis coffre chiffré local sur chaque appareil. Aucun JSON privé ne doit être ajouté au dépôt, à ses issues ou à ses releases.
 
-## Sauvegarde mensuelle obligatoire
-- Dès la première session avec comptes du nouveau mois civil, l'application exige une sauvegarde privée avant toute nouvelle modification financière.
-- L'action **Sauvegarde mensuelle JSON** produit localement un ZIP nommé `BRVM_SAUVEGARDE_AAAA-MM.zip` comprenant `BRVM_COMPLET.json`, un JSON indépendant pour chaque compte actif et `MANIFESTE.json`.
-- Pour attester la sauvegarde, l'utilisateur **resélectionne le fichier ZIP qu'il vient de télécharger** : l'application vérifie sa taille et son empreinte SHA-256 avant d'enregistrer la validation du mois dans le coffre local.
-- Tant que la sauvegarde n'est pas validée, consultation, imports de récupération, export et effacement volontaire restent disponibles. Les écritures, réglages et mises à jour de cotations sont bloqués.
-- L'importeur accepte les JSON individuels ou le ZIP mensuel complet, sans extraction manuelle. Une restauration sur un autre appareil exige une nouvelle sauvegarde locale.
-- **Sécurité** : le ZIP contient des JSON lisibles en clair. Ne jamais l'ajouter à GitHub, à une issue, à une release ou à un espace partagé. Le placer dans un stockage privé et protégé, de préférence hors de l'appareil. Partager uniquement les JSON strictement nécessaires.
-- Les fichiers individuels sont des **photographies comptables** (positions, cash et historique archivé), destinées au transfert des comptes. Le JSON complet préserve en plus le journal actif et les observations de performance.
-- Une application web ne peut pas prouver qu'un téléchargement est durablement conservé à l'extérieur de l'appareil. La relecture de l'archive atteste seulement que des octets identiques sont accessibles au moment de la vérification.
+## Sauvegardes privées facultatives
+- Le ZIP de sauvegarde mensuelle peut être téléchargé volontairement, sans obligation ni vérification bloquante.
+- Une sauvegarde reste recommandée avant une modification importante ou une restauration, mais aucune action financière n’est suspendue à cause d’un mois non sauvegardé.
+- Les JSON personnels et les clés privées ne sont jamais publiés dans ce dépôt.
 
 ## Publication sans tiers
 Le workflow `.github/workflows/pages.yml` vérifie la confidentialité, lance les tests financiers et Chromium, construit `dist/` depuis une liste blanche puis publie exclusivement ce dossier avec GitHub Pages.

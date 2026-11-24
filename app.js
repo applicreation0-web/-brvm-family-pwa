@@ -28,7 +28,7 @@
   let store, record, db, calc, tab='dashboard', portfolioId='', busy=false, refreshing=false, plan=null, comparison=null, planInputs=null, importPreview=null;
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
-  let importRevision, mergedImport, importReadTicket=0, pendingBackup=null;
+  let importRevision, mergedImport, importReadTicket=0;
   let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0;
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
   const coreSymbols=p=>Object.keys(p?.targets||E.targets);
@@ -80,8 +80,7 @@
     if(target) {target.hidden=false; target.textContent=err.message; target.scrollIntoView({block:'nearest'});}
     else notify(err.message,true);
   }
-  async function put(next,replace=false,backupApproval=false) {
-    if(!backupApproval && V.backupDue(db)) throw Error('Sauvegarde mensuelle obligatoire : téléchargez et vérifiez le ZIP avant toute modification.');
+  async function put(next,replace=false) {
     record=await store.commit(next,record.revision,replace);
     db=record.data;
     calc=F.calculate(db);
@@ -93,33 +92,12 @@
     a.href=url; a.download=name; a.click();
     setTimeout(()=>URL.revokeObjectURL(url),3000);
   }
-  async function exportMonthlyBackup() {
+  // La sauvegarde est volontaire. Elle ne bloque jamais une opération.
+  function exportMonthlyBackup() {
     if(!db?.accounts.length) throw Error('Ajoutez ou importez d’abord un compte.');
     const bundle=V.monthlyBundle(db);
-    const fingerprint=await V.sha256(bundle.bytes);
-    pendingBackup={fingerprint,month:bundle.month,revision:record.revision,bytes:bundle.bytes.length};
     download(bundle.bytes,'BRVM_SAUVEGARDE_'+bundle.month+'.zip','application/zip');
-    modal('Sauvegarde mensuelle à vérifier',
-      '<p>Le ZIP contient le JSON complet et un JSON par compte actif. Conservez ce fichier hors du téléphone, dans un espace privé. Les JSON sont en clair.</p>'+
-      '<p><strong>Étape obligatoire :</strong> sélectionnez ci-dessous le ZIP que vous venez d’enregistrer. Le contenu et son empreinte seront contrôlés avant de débloquer les modifications.</p>'+
-      '<label class="field"><span>Vérifier le ZIP sauvegardé</span><input id="backup-verify" type="file" accept=".zip,application/zip"></label>'+
-      '<p class="quiet">La consultation et la récupération de données restent possibles même sans sauvegarde. L’application ne peut pas vérifier un stockage externe sans ce contrôle.</p>');
-  }
-  async function verifyMonthlyBackup(file) {
-    const proof=pendingBackup;
-    if(!proof || !file) throw Error('Relancez d’abord la sauvegarde mensuelle.');
-    if(file.size!==proof.bytes || file.size>128*1024*1024)
-      throw Error('La taille de la sauvegarde ne correspond pas.');
-    const digest=await V.sha256(await file.arrayBuffer());
-    if(digest!==proof.fingerprint) throw Error('Le fichier n’est pas identique au ZIP exporté.');
-    if(record.revision!==proof.revision || V.monthKey()!==proof.month)
-      throw Error('Les données ou le mois ont changé. Relancez la sauvegarde.');
-    const next=structuredClone(db);
-    next.settings.monthlyBackup={month:proof.month,verifiedAt:new Date().toISOString(),sha256:digest};
-    await put(next,true,true);
-    pendingBackup=null;
-    close();render();
-    notify('Sauvegarde du mois vérifiée. Les modifications sont à nouveau autorisées.');
+    notify('ZIP de sauvegarde téléchargé. Conservez-le dans un espace privé.');
   }
   function selectedSgiAccounts(p) {
     return sgiFilter ? p.accounts.filter(a=>a.institutionId===sgiFilter) : p.accounts;
@@ -568,6 +546,48 @@
         '<p class="empty">Aucune analyse financière documentée. Les cours seuls ne constituent pas une analyse d’émetteur.</p>')+
       missing+'<div class="actions">'+btn('foundation','Saisir des données émetteur')+'</div></details>';
   }
+  function transactionConfirmation(form) {
+    if(form.dataset.finalConfirmed==='yes') return false;
+    const f=new FormData(form),kind=f.get('type')||form.dataset.type;
+    const accountId=f.get('accountId')||form.dataset.account;
+    const detail=[
+      ['Opération',labels[kind]||kind],
+      ['Compte',accName(accountId)],
+      ['Date',f.get('date')||'—'],
+      ['Référence',f.get('brokerRef')||'—'],
+      ['Titre',f.get('symbol')],
+      ['Montant',f.get('amount') ? f.get('amount')+' FCFA' : null],
+      ['Quantité',f.get('qty')],
+      ['Cours',f.get('price') ? f.get('price')+' FCFA' : null],
+      ['Total réel',f.get('actualTotal') ? f.get('actualTotal')+' FCFA' : null],
+      ['Courtage',f.get('broker') ? f.get('broker')+' FCFA' : null],
+      ['Autres frais',f.get('other') ? f.get('other')+' FCFA' : null],
+      ['Taxes',f.get('tax') ? f.get('tax')+' FCFA' : null]
+    ].filter(([,value])=>value!==null && value!==undefined && value!=='');
+    const summary=document.createElement('section');
+    summary.className='tx-confirm-preview';
+    summary.setAttribute('role','status');
+    summary.innerHTML='<strong>Confirmer avant comptabilisation</strong>'+
+      '<p>Vérifiez les informations. Aucun compte n’est modifié avant la deuxième validation.</p>'+
+      '<dl>'+detail.map(([name,value])=>'<div><dt>'+esc(name)+'</dt><dd>'+esc(String(value))+'</dd></div>').join('')+'</dl>';
+    form.querySelector(':scope > .actions')?.before(summary);
+    form.dataset.finalConfirmed='yes';
+    const button=form.querySelector('button[type=submit]');
+    button.textContent='Confirmer et comptabiliser';
+    button.focus();
+    return true;
+  }
+  function clearTransactionConfirmation(form) {
+    if(!form||form.dataset.finalConfirmed!=='yes') return;
+    delete form.dataset.finalConfirmed;
+    form.querySelector('.tx-confirm-preview')?.remove();
+    const button=form.querySelector('button[type=submit]');
+    if(button) button.textContent='Comptabiliser';
+  }
+  const removableTransaction=t=>Boolean(t && !['SPLIT','CORRECTION'].includes(t.type) &&
+    !t.orderId && !t.eventId && !db.transactions.some(other=>other.corrects===t.id||other.reinvests===t.id));
+  const visibleArchives=()=>db.history.map((item,index)=>({item,index}))
+    .filter(({item})=>item.kind!=='AUDIT_RETRAIT');
   function journalRow(t) {
     let value='—';
     if(['BUY','SELL'].includes(t.type)) value=fc(F.tradeAmounts(t).total/100);
@@ -579,7 +599,8 @@
       esc(t.brokerRef)+(t.note?'<br><small>'+esc(t.note)+'</small>':''),
       `<div class="actions">${btn('tx-detail','Détail',t.id)}${t.attachmentId?btn('attachment','Télécharger la pièce',t.attachmentId):''}
       ${t.type==='DIVIDEND'&&!db.transactions.some(x=>x.corrects===t.id)?btn('reinvest','Réinvestir sur avis',t.id):''}
-      ${['DEPOSIT','WITHDRAW','FEE','TRANSFER','BUY','SELL','DIVIDEND','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY'].includes(t.type)&&!db.transactions.some(x=>x.corrects===t.id)?btn('correct','Rectifier',t.id):''}</div>`];
+      ${['DEPOSIT','WITHDRAW','FEE','TRANSFER','BUY','SELL','DIVIDEND','BONUS','RIGHTS','STOCK_DIVIDEND','RIGHTS_EXPIRY'].includes(t.type)&&!db.transactions.some(x=>x.corrects===t.id)?btn('correct','Rectifier',t.id):''}
+      ${removableTransaction(t)?btn('remove-tx','Retirer',t.id):''}</div>`];
   }
   function historyView() {
     const p=getPortfolio();
@@ -597,16 +618,17 @@
       ${pane('Journal des écritures locales',`<div class="context compact">${field('month','Filtrer par mois',input('month',historyMonth,'month','id="history-month"'))}<span class="quiet">${txs.length} écritures</span></div>`+
         table(['Date','Compte','Opération','Montant','Référence','Actions'],txs.slice(0,journalLimit).map(journalRow))+
         (txs.length>journalLimit?`<div class="actions">${btn('history-more','Afficher 40 écritures de plus')}</div>`:''))}
-      ${pane('Archives comprises dans le solde d’ouverture',table(['Date','Compte','Opération','Justificatif / état','Montant'],db.history.slice().reverse().slice(0,archiveLimit).map(t=>[
+      ${pane('Archives comprises dans le solde d’ouverture',table(['Date','Compte','Opération','Justificatif / état','Montant','Actions'],visibleArchives().reverse().slice(0,archiveLimit).map(({item:t,index})=>[
         F.date(t.date)?showDate(t.date):'—',esc(accName(t.accountId)),esc(labels[t.type]||t.kind||t.type||'')+(t.symbol?' · '+esc(t.symbol):''),
-        esc([t.reference,t.status,t.note].filter(Boolean).join(' · '))+(t.attachmentId?' '+btn('attachment','Télécharger la pièce',t.attachmentId):''),typeof (t.actualTotal??t.amount)==='number'?fc(t.actualTotal??t.amount):'—']))+
-        (db.history.length>archiveLimit?`<div class="actions">${btn('archive-more','Afficher 40 archives de plus')}</div>`:''),
-        'Consultation uniquement. Les écritures historiques sont déjà incluses dans les soldes d’ouverture.')}
+        esc([t.reference,t.status,t.note].filter(Boolean).join(' · '))+(t.attachmentId?' '+btn('attachment','Télécharger la pièce',t.attachmentId):''),typeof (t.actualTotal??t.amount)==='number'?fc(t.actualTotal??t.amount):'—',
+        t.type==='SPLIT'?'—':btn('remove-archive','Retirer',String(index))]))+
+        (visibleArchives().length>archiveLimit?'<div class="actions">'+btn('archive-more','Afficher 40 archives de plus')+'</div>':''),
+        'Ces archives sont déjà incluses dans les soldes d’ouverture. Retirer une ligne ne modifie aucun solde ; une trace privée reste conservée.')}
     `;
   }
   function dataView() {
-    return `<div class="split">${pane('Sauvegardes privées',`<p>Sauvegarde mensuelle obligatoire : un ZIP contenant le JSON complet et un fichier indépendant pour chaque compte. Le mois est validé après relecture du fichier exporté.</p><p>Exportez une sauvegarde chiffrée pour la conserver ou la restaurer sur un autre appareil. Le navigateur ne synchronise pas les portefeuilles. ${store.protected?'Le coffre actif est chiffré sur cet appareil. Verrouillez-le avant de quitter le profil.':'Les données actives sont stockées en clair. Vous pouvez activer le coffre local.'}</p>
-      <div class="actions">${btn('monthly-backup','Sauvegarde mensuelle JSON · '+(V.backupDue(db)?'À effectuer':'Vérifiée'),'','primary')}${store.protected?btn('lock','Verrouiller le coffre'):btn('protect','Chiffrer les données actives')}${btn('encrypt','Exporter chiffré','','primary')}${btn('import','Importer mes données')}${btn('import','Restaurer une sauvegarde')}${btn('export-json','Exporter mon JSON')}${btn('reset','Effacer mes données locales')}${checkpoint?btn('rollback','Restaurer le point précédent'):''}</div>
+    return `<div class="split">${pane('Sauvegardes privées',`<p>Sauvegarde ZIP facultative : le téléchargement contient le JSON complet et un fichier indépendant pour chaque compte. Elle ne bloque jamais l’enregistrement des opérations.</p><p>Exportez une sauvegarde chiffrée pour la conserver ou la restaurer sur un autre appareil. Le navigateur ne synchronise pas les portefeuilles. ${store.protected?'Le coffre actif est chiffré sur cet appareil. Verrouillez-le avant de quitter le profil.':'Les données actives sont stockées en clair. Vous pouvez activer le coffre local.'}</p>
+      <div class="actions">${btn('monthly-backup','Télécharger une sauvegarde ZIP (facultatif)','','primary')}${store.protected?btn('lock','Verrouiller le coffre'):btn('protect','Chiffrer les données actives')}${btn('encrypt','Exporter chiffré','','primary')}${btn('import','Importer mes données')}${btn('import','Restaurer une sauvegarde')}${btn('export-json','Exporter mon JSON')}${btn('reset','Effacer mes données locales')}${checkpoint?btn('rollback','Restaurer le point précédent'):''}</div>
       <p class="quiet">Une importation de remplacement garde le jeu précédent dans un point de restauration local. Sauvegardez avant de désinstaller, de changer d’adresse ou d’effacer les données du navigateur.</p>
       <details><summary>Données d’une ancienne version</summary><p>BRVM V2 et certaines versions V3 utilisaient un stockage commun à cette adresse. Vérifiez le contenu avant de le reprendre.</p>${btn('legacy','Voir les données de l’ancienne version')}</details>`)}
       ${pane('Sources de marché',`<p>L’actualisation automatique exige un flux autorisé pour cette installation. Le téléchargement manuel du fournisseur et l’import local restent disponibles.</p>
@@ -639,7 +661,7 @@
     $('#page-title').textContent=pages[tab][0];
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
     $('#quote-date').textContent=last?'Cours enregistrés · '+showDate(last):'Aucun cours chargé';
-    $('#view').innerHTML=(V.backupDue(db)?'<section class="backup-banner" role="status"><span><strong>Sauvegarde du mois requise.</strong> Les modifications restent verrouillées.</span>'+btn('monthly-backup','Sauvegarder et vérifier','','primary')+'</section>':'')+
+    $('#view').innerHTML=
       {dashboard,accounts:accountsView,invest:investment,orders:ordersView,events:eventsView,
       history:historyView,settings:settingsView,data:dataView}[tab]();
   }
@@ -861,6 +883,34 @@
             '<label class="check"><input name="included" type="checkbox" required> Le relevé confirme que l’opération est incluse dans la photographie.</label>',
             'Ajouter le rapprochement à l’archive'));break;
         case 'correct': {const t=db.transactions.find(x=>x.id===id);transaction('CORRECTION',{accountId:t.accountId,corrects:id});break;}
+        case 'remove-tx': {
+          const t=db.transactions.find(x=>x.id===id);
+          if(!removableTransaction(t)) throw Error('Cette écriture a une opération liée. Utilisez la rectification prévue.');
+          modal('Confirmer le retrait de l’écriture',
+            form('remove-tx',
+              '<p><strong>'+esc(labels[t.type]||t.type)+'</strong> · '+showDate(t.date)+'</p>'+
+              '<p>'+esc(accName(t.accountId))+' · Référence : '+esc(t.brokerRef)+'</p>'+
+              '<p>Le retrait recalcule les espèces, titres et frais. Une écriture dépendante bloque le retrait. Une trace non visible reste dans l’audit privé.</p>'+
+              field('reason','Motif du retrait',input('reason','','text','required minlength="5" maxlength="200"'))+
+              '<label class="check"><input type="checkbox" name="confirmed" required> Je confirme le retrait de cette écriture.</label>'+
+              '<input type="hidden" name="revision" value="'+record.revision+'">',
+              'Confirmer le retrait',id));
+          break;
+        }
+        case 'remove-archive': {
+          const index=Number(id),t=db.history[index];
+          if(!Number.isSafeInteger(index)||!t||t.kind==='AUDIT_RETRAIT'||t.type==='SPLIT') throw Error('Cette archive ne peut pas être retirée.');
+          modal('Confirmer le retrait de l’archive',
+            form('remove-archive',
+              '<p><strong>'+esc(labels[t.type]||t.kind||t.type||'Archive')+'</strong> · '+(F.date(t.date)?showDate(t.date):'Date non précisée')+'</p>'+
+              '<p>'+esc(accName(t.accountId))+'</p>'+
+              '<p>Cette archive est déjà incluse dans les soldes d’ouverture. Son retrait de la liste ne change aucun montant ni titre. Une trace reste dans l’audit privé.</p>'+
+              field('reason','Motif du retrait',input('reason','','text','required minlength="5" maxlength="200"'))+
+              '<label class="check"><input type="checkbox" name="confirmed" required> Je confirme le retrait de cette archive.</label>'+
+              '<input type="hidden" name="revision" value="'+record.revision+'">',
+              'Confirmer le retrait',id));
+          break;
+        }
         case 'tx-detail': {
           const t=db.transactions.find(x=>x.id===id);
           const info=['Date '+showDate(t.date),'Référence '+t.brokerRef,t.note,t.source,t.override,t.corrects?'Rectifie '+t.corrects:'',t.reinvests?'Dividende d’origine '+(db.transactions.find(x=>x.id===t.reinvests)?.brokerRef||''):''].filter(Boolean);
@@ -947,6 +997,7 @@
     e.preventDefault();
     const type=form.dataset.form, id=form.dataset.id;
     if(busy||(!db&&!['unlock','reset'].includes(type))) return;
+    if(type==='tx' && transactionConfirmation(form)) return;
     busy=true;
     const f=new FormData(form);
     const feedback=$('#modal[open] .modal-error')||$('#view form[data-form=unlock] + .modal-error');
@@ -954,6 +1005,22 @@
     let next, message='Enregistré sur cet appareil.', replace=false, page;
     try {
       switch(type) {
+        case 'remove-tx': {
+          if(!f.has('confirmed')) throw Error('Confirmez le retrait de cette écriture.');
+          if(Number(f.get('revision'))!==record.revision) throw Error('Les données ont changé : rouvrez le retrait.');
+          next=F.removeJournalEntry(db,id,trim(f,'reason'));
+          message='Écriture retirée du journal. Soldes recalculés ; trace privée conservée.';
+          page='history';
+          break;
+        }
+        case 'remove-archive': {
+          if(!f.has('confirmed')) throw Error('Confirmez le retrait de cette archive.');
+          if(Number(f.get('revision'))!==record.revision) throw Error('Les données ont changé : rouvrez le retrait.');
+          next=F.removeArchiveEntry(db,Number(id),trim(f,'reason'));
+          message='Archive retirée de la liste. Soldes inchangés ; trace privée conservée.';
+          page='history';
+          break;
+        }
         case 'core-review': {
           if(!f.has('confirmed')) throw Error('Confirmez que vous avez examiné les informations disponibles.');
           next=R.acknowledge(db,id);
@@ -1210,11 +1277,15 @@
   });
   document.addEventListener('input',e=>{
     const form=e.target.closest('form[data-form=tx]');
-    if(form && ['qty','price','broker','other','tax'].includes(e.target.name)) tradePreview(form);
+    if(form) {
+      clearTransactionConfirmation(form);
+      if(['qty','price','broker','other','tax'].includes(e.target.name)) tradePreview(form);
+    }
   });
   document.addEventListener('change',e=>{
     const el=e.target;
     if(!db) return;
+    if(el.closest('form[data-form=tx]')) clearTransactionConfirmation(el.closest('form[data-form=tx]'));
     if(el.matches('form[data-form=invest] [name=mode]')) {
       const options=el.form.querySelector('[data-manual]');
       options.hidden=el.value!=='manuel';
@@ -1225,10 +1296,6 @@
     if(el.matches('#account-filter')) {accountFilter=el.value;render();$('#account-filter')?.focus();}
     if(el.matches('#history-month')) {historyMonth=el.value;journalLimit=40;render();$('#history-month')?.focus();}
     if(el.closest('form[data-form=tx]') && ['type','accountId','toAccountId'].includes(el.name)) {transactionFields(el.form);tradePreview(el.form);}
-    if(el.id==='backup-verify') {
-      const file=el.files?.[0];el.value='';
-      if(file) void verifyMonthlyBackup(file).catch(showError);
-    }
     if(el.id==='import'||el.id==='quote-import') {
       const file=el.files?.[0];el.value='';
       if(file) void (el.id==='import'?chooseImport(file):chooseQuotes(file)).catch(showError);
@@ -1295,7 +1362,7 @@
     });
   }
   function scheduleRefresh() {
-    if(db?.settings.autoQuotes && !V.backupDue(db) && !document.hidden && navigator.onLine && !busy && !$('#modal').open &&
+    if(db?.settings.autoQuotes && !document.hidden && navigator.onLine && !busy && !$('#modal').open &&
       Date.now()-lastQuoteAttempt>=15*60*1000) void refresh(true);
   }
   document.addEventListener('visibilitychange',scheduleRefresh);
