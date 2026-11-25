@@ -389,7 +389,9 @@ def check(first, second):
             body=market_csv))
         market.get_by_role('button', name='Réessayer maintenant').click()
         expect(page.get_by_text('cotations actualisées',exact=False)).to_be_visible(timeout=10000)
-        expect(page.locator('#quote-date')).to_contain_text('24/11/2026')
+        # Un cours local postérieur au fournisseur doit rester prioritaire.
+        expect(page.locator('#quote-date')).to_contain_text('25/11/2026')
+        expect(page.get_by_text('séance fournisseur du 24/11/2026',exact=False)).to_be_visible()
         context.unroute(market_url)
         context.route(market_url,lambda route: route.fulfill(status=503,
             headers={'access-control-allow-origin':'*'},body='test offline'))
