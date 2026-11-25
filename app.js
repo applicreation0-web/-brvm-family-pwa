@@ -378,12 +378,13 @@
         '. Les titres concernés ne sont pas proposés à l’achat. Mettre les cotations à jour avant tout ordre.</p>':'';
     const market=draft.orderMode==='MARKET'
       ?'<p class="alert error">Un ordre au marché peut être exécuté au-dessus du dernier cours et dépasser le montant prévu. Il est ici simulé seulement : impossible de garantir le plafond sans ordre limite.</p>'
-      :'<p class="quiet">Cours limite suggéré = dernier cours local valide. Ce n’est pas une garantie d’exécution : validez le carnet et les frais auprès de la SGI.</p>';
+      :'<p class="quiet">Cours limite conseillé : dernier cours local valide par défaut, modifiable. Le montant maximal est recalculé à ce prix. Validez le carnet, le pas de cotation et les frais auprès de la SGI.</p>';
     const panels=r.scenarios.map(sc=>{
       const items=sc.lines.map((l,index)=>[
         '<strong>'+esc(l.symbol)+'</strong><br><small>'+esc(db.instruments[l.symbol]?.label||E.names[l.symbol]||'')+'</small>',
         fmt.format(l.qty),
-        fc(l.price)+'<br><small>'+showDate(l.quote.date)+' · '+esc(l.quote.source)+'</small>',
+        fc(l.referencePrice??l.quote.price)+'<br><small>'+showDate(l.quote.date)+'</small>',
+        ...(draft.orderMode==='LIMIT'?[ '<strong>'+fc(l.price)+'</strong><br>'+btn('buy-limit-edit','Modifier',l.symbol) ]:[]),
         fc(l.broker+l.other),
         fc(l.total),
         btn('buy-executed','Saisir si exécuté',sc.key+'|'+index)
@@ -393,7 +394,7 @@
           kpi('Investissement estimé',fc(sc.spent))+
           kpi('Espèces restantes sur ce compte',fc(sc.cashAfter))+
           kpi('Frais inclus',fc(sc.fees))+'</div>'+
-        (items.length?table(['Titre','Quantité','Cours de référence','Frais estimés','Total','Après avis SGI'],items)
+        (items.length?table(['Titre','Quantité','Cours de référence',...(draft.orderMode==='LIMIT'?['Cours limite conseillé / ajusté']:[]),'Frais estimés','Total','Après avis SGI'],items)
           :'<p class="empty">'+(sc.ignored.length===Object.keys(sc.plan.targets).length?'Aucun titre CORE admissible : vérifier les cotations et les filtres de conformité.':'Aucun achat compatible avec ce plafond et les écarts aux cibles CORE, frais inclus. Augmentez le budget si nécessaire.')+'</p>')+
         '<p class="quiet">Budget du scénario : '+fc(sc.cap)+' · Non utilisé sur ce budget : '+fc(sc.availableRemainder)+
         '. Les montants non exécutés restent des espèces.</p>'+
@@ -405,7 +406,7 @@
       '<p><strong>Disponible réel selon la PWA :</strong> '+fc(r.available)+
       ' · <strong>Budget demandé :</strong> '+fc(r.budget)+'</p>'+(r.budget<r.available?'<p class="quiet">Le budget demandé est inférieur aux espèces disponibles de '+fc(r.available-r.budget)+'. Pour utiliser davantage, choisir Changer SGI ou budget.</p>':'')+
       '<p class="quiet">Pour un achat partiel : saisissez seulement la quantité réellement exécutée sur l’avis. À la prochaine ouverture d’Acheter, les scénarios seront recalculés avec les nouvelles espèces et positions.</p>'+
-      warning+'<div class="actions">'+btn('buy-refresh','Actualiser les cours','','primary')+btn('quote-import','Importer CSV / JSON')+'</div>'+market+'<div class="buy-scenarios">'+panels+'</div>'+
+      warning+'<div class="actions">'+btn('buy-refresh','Actualiser les cours','','primary')+btn('quote-import','Importer CSV / JSON')+(draft.orderMode==='LIMIT'?btn('buy-limit-edit','Modifier les cours limites'):'')+'</div>'+market+'<div class="buy-scenarios">'+panels+'</div>'+
       '<div class="actions">'+btn('buy-restart','Changer SGI ou budget')+'</div>'+
       '<p class="quiet">Les scénarios suivent les écarts aux cibles CORE, et ne constituent pas une preuve de sous-valorisation ou de conformité charia. Vérifiez les cours et le justificatif avant exécution.</p>'+
       '<p><a href="https://www.brvm.org/fr/cours-actions/officiel" target="_blank" rel="noopener noreferrer">Vérifier les cours actuels sur la BRVM</a></p>');
@@ -995,14 +996,14 @@
         }
         case 'buy-refresh': {
           if(!buyDraft) throw Error('Rouvrez le parcours Acheter.');
-          const {result:previous,orderMode,verifiedOnly}=buyDraft;
+          const {result:previous,orderMode,verifiedOnly,limitPrices={}}=buyDraft;
           close();
           if(marketJob) await marketJob;
           else await refresh(true);
           if(!db||portfolioId!==previous.portfolioId||$('#modal').open) break;
           const result=F.purchaseScenarios(db,{portfolioId,accountId:previous.accountId,
-            budget:previous.budget,verifiedOnly});
-          buyDraft={result,revision:record.revision,orderMode,verifiedOnly};
+            budget:previous.budget,verifiedOnly,limitPrices});
+          buyDraft={result,revision:record.revision,orderMode,verifiedOnly,limitPrices};
           showPurchaseScenarios();
           if(result.outOfDate.length&&marketFailure) showError(Error(marketFailure));
           break;
@@ -1021,6 +1022,21 @@
           await purchaseGuide(selected,saved);
           if(marketFailure) showError(Error(marketFailure));
           break;
+        }
+        case 'buy-limit-edit': {
+          if(!buyDraft||buyDraft.revision!==record.revision||buyDraft.orderMode!=='LIMIT') throw Error('Recalculez les scénarios.');
+          const p=getPortfolio(), limits=buyDraft.limitPrices||{};
+          const symbols=Object.keys(p.targets).filter(s=>db.quotes[s]?.price>0&&!buyDraft.result.outOfDate.includes(s));
+          if(!symbols.length) throw Error('Aucun cours valide à ajuster.');
+          modal('Modifier les cours limites',form('buy-limits', '<p class="quiet">Prix maximal par action en FCFA. Valeur par défaut : dernier cours de référence. Les trois scénarios sont recalculés sans modifier les cotations ni les opérations.</p>'+symbols.map(s=>field('limit-'+s,s+' · référence '+fc(db.quotes[s].price),integer('limit-'+s,limits[s]??db.quotes[s].price))).join(''),'Recalculer les trois scénarios')+'<div class="actions">'+btn('buy-limit-reset','Rétablir les cours de référence')+btn('buy-limit-back','Retour aux scénarios')+'</div>');
+          break;
+        }
+        case 'buy-limit-back': showPurchaseScenarios();break;
+        case 'buy-limit-reset': {
+          if(!buyDraft||buyDraft.revision!==record.revision) throw Error('Recalculez les scénarios.');
+          const {result,verifiedOnly}=buyDraft;
+          buyDraft={...buyDraft,limitPrices:{},result:F.purchaseScenarios(db,{portfolioId,accountId:result.accountId,budget:result.budget,verifiedOnly})};
+          showPurchaseScenarios();break;
         }
         case 'buy-manual': transaction('BUY');break;
         case 'buy-executed': {
@@ -1041,7 +1057,7 @@
             '<p>La création de ces projets ne débite pas les espèces et ne transmet aucun ordre à la SGI.</p>'+
             '<p><strong>'+esc(scenario.label)+'</strong> · Débit maximal estimé : '+fc(scenario.spent)+
             ' · Frais inclus : '+fc(scenario.fees)+'</p>'+
-            '<p>Le prix limite proposé correspond au dernier cours local affiché, et doit être validé auprès de la SGI.</p>'+
+            '<p>Les prix limites affichés (y compris vos ajustements) seront enregistrés dans les projets. Validez-les auprès de la SGI.</p>'+
             '<label class="check"><input name="confirmed" type="checkbox" required> Je confirme uniquement la préparation des ordres, sans achat exécuté.</label>',
             'Enregistrer les projets',scenario.key));
           break;
@@ -1208,6 +1224,13 @@
           buyDraft={result,revision:record.revision,orderMode,verifiedOnly:f.has('verifiedOnly')};
           showPurchaseScenarios();
           return;
+        }
+        case 'buy-limits': {
+          if(!buyDraft||buyDraft.revision!==record.revision||buyDraft.orderMode!=='LIMIT') throw Error('Scénario périmé : recalculez.');
+          const {result,verifiedOnly}=buyDraft,limitPrices={};
+          for(const [name,value] of f.entries()) if(name.startsWith('limit-')) {const symbol=name.slice(6),price=Number(value);if(!Number.isSafeInteger(price)||price<=0) throw Error('Cours limite invalide : '+symbol);if(price!==db.quotes[symbol]?.price) limitPrices[symbol]=price;}
+          const revised=F.purchaseScenarios(db,{portfolioId,accountId:result.accountId,budget:result.budget,verifiedOnly,limitPrices});
+          buyDraft={...buyDraft,limitPrices,result:revised};showPurchaseScenarios();return;
         }
         case 'buy-project': {
           if(!f.has('confirmed')) throw Error('La préparation des ordres doit être confirmée.');
