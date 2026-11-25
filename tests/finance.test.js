@@ -243,7 +243,7 @@ test('RC2 INV03 : égalisation après frais, conservation du budget sans aliment
   assert.equal(before(d).cash,10000);
 });
 
-test('RC2 MKT01 : configuration avant accès au flux, uniquement sur origine de déploiement',async()=>{
+test('RC2 MKT01 : conserve le flux contractuel lorsqu’il est autorisé ; jamais de fuite privée',async()=>{
   const headers={method:'GET',credentials:'same-origin',referrerPolicy:'no-referrer',cache:'no-store',redirect:'error'};
   const attempted=[];
   const q=await Q.online(async (url,options)=>{
@@ -254,10 +254,44 @@ test('RC2 MKT01 : configuration avant accès au flux, uniquement sur origine de 
   });
   assert.deepEqual(attempted,['./market/feed.json','./market/latest.csv']);
   assert.equal(q.TOCI.basis,'official');
-  await assert.rejects(Q.online(async url=>{assert.match(url,/feed.json$/);return Response.json({enabled:false});}),/Aucun flux/);
-  await assert.rejects(Q.online(async ()=>Response.json({enabled:true,source:'Non autorisée'})),/autorisation/);
+  await assert.rejects(Q.online(async url=>url.endsWith('feed.json')?
+    Response.json({enabled:true,source:'Non autorisée'}) : new Response('',{status:503})),/autorisation/);
   await assert.rejects(Q.online(async url=>url.endsWith('feed.json')?
     Response.json({enabled:true,source:'Test',authorization:'TEST'}) : new Response('',{status:503})),/indisponible/);
+});
+test('MKT02 : source CSV directe de dernière séance (ancienne logique Vercel), lecture GET seule',async()=>{
+  const csv='symbol,session_date,close_xof,basis,traded\n'+
+   ['SNTS','ORAC','CIEC','TOCI','SMBC','NTLC','PALC'].map((s,i)=>
+    s+',2025-01-03,'+(1000+i*500)+',provisional,true').join('\n');
+  const calls=[];
+  const quotes=await Q.online(async (url,opt)=>{
+    calls.push({url,method:opt.method,credentials:opt.credentials,mode:opt.mode});
+    if(url.endsWith('/feed.json'))return Response.json({enabled:false});
+    assert.equal(url,Q.URL);
+    return new Response(csv,{status:200});
+  });
+  assert.equal(await Q.feedEnabled(),true);
+  assert.equal(calls.length,2);
+  assert.equal(calls[1].credentials,'omit');
+  assert.equal(calls[1].mode,'cors');
+  assert.equal(calls[1].method,'GET');
+  assert.deepEqual(Object.keys(quotes).sort(),['CIEC','NTLC','ORAC','PALC','SMBC','SNTS','TOCI']);
+  assert(quotes.SNTS.source.includes('BRVMData'));
+  assert.equal(quotes.SNTS.basis,'provisional');
+  assert.equal(quotes.SNTS.date,'2025-01-03');
+  const d=fixture(),cash=F.calculate(d).all.cash;
+  const changed=F.quoteUpdates(d,quotes).next;
+  assert.equal(F.calculate(changed).all.cash,cash);
+  assert.equal(changed.transactions.length,0);
+});
+test('MKT03 : indisponibilité, source incomplète et connexion refusée ne remplacent pas les cours',async()=>{
+  const bad=async url=>url.endsWith('/feed.json')?Response.json({enabled:false}):
+    new Response('symbol,session_date,close_xof\nSNTS,2025-01-03,2000');
+  await assert.rejects(Q.online(bad),/incomplète/);
+  await assert.rejects(Q.online(async url=>{
+    if(url.endsWith('/feed.json'))return Response.json({enabled:false});
+    throw new TypeError('CORS failed');
+  }),/CORS/);
 });
 
 test('RC2 FIN12 FIN22 : archive antérieure attestée, pièce locale et absence de double comptabilisation',()=>{
