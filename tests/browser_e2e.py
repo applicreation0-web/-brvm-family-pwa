@@ -184,6 +184,7 @@ def check(first, second):
         two=json.loads(json.dumps(data))
         two['institutions'].append({'id':'browser-only-s2','label':'Autre SGI fictive'})
         two['accounts'].append({**two['accounts'][0],'id':'browser-only-a2','institutionId':'browser-only-s2','label':'Autre compte fictif','cash':420000})
+        two['quotes']=switch_page.evaluate("""() => Object.fromEntries(Object.keys(BRVMEngine.targets).map(s=>[s,{price:1000,date:BRVM.today(),basis:'manual',source:'Recette fictive'}]))""")
         upload(switch_page,json.dumps(two).encode())
         confirm_import(switch_page,initialize=True)
         switch_page.get_by_role('button',name='Acheter',exact=True).click()
@@ -195,6 +196,14 @@ def check(first, second):
         switch_guide.locator('[name=budget]').fill('1000')
         switch_guide.get_by_role('button',name='Utiliser toutes les espèces disponibles').click()
         assert switch_guide.locator('[name=budget]').input_value()=='420000'
+        switch_guide.get_by_role('button',name='Calculer mes scénarios').click()
+        expect(switch_guide.get_by_role('columnheader',name='Cours limite conseillé / ajusté').first).to_be_visible()
+        switch_guide.get_by_role('button',name='Modifier les cours limites',exact=True).click()
+        for field in switch_guide.locator('input[name^=limit-]').all():
+            field.fill('2000')
+        switch_guide.get_by_role('button',name='Recalculer les trois scénarios').click()
+        expect(switch_guide.get_by_role('columnheader',name='Cours de référence').first).to_be_visible()
+        expect(switch_guide.get_by_text('2 000 F',exact=True).first).to_be_visible()
         switch_context.close()
         # Vendre 2 actions avec frais vrais, puis racheter une action sur avis.
         page.get_by_role('button', name='Vendre', exact=True).click()
