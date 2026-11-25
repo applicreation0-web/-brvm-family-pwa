@@ -262,7 +262,7 @@ test('RC2 MKT01 : conserve le flux contractuel lorsqu’il est autorisé ; jamai
 test('MKT02 : source CSV directe de dernière séance (ancienne logique Vercel), lecture GET seule',async()=>{
   const csv='symbol,session_date,close_xof,basis,traded\n'+
    ['SNTS','ORAC','CIEC','TOCI','SMBC','NTLC','PALC'].map((s,i)=>
-    s+',2025-01-03,'+(1000+i*500)+',provisional,true').join('\n');
+    s+','+F.today()+','+(1000+i*500)+',provisional,true').join('\n');
   const calls=[];
   const quotes=await Q.online(async (url,opt)=>{
     calls.push({url,method:opt.method,credentials:opt.credentials,mode:opt.mode});
@@ -278,7 +278,7 @@ test('MKT02 : source CSV directe de dernière séance (ancienne logique Vercel),
   assert.deepEqual(Object.keys(quotes).sort(),['CIEC','NTLC','ORAC','PALC','SMBC','SNTS','TOCI']);
   assert(quotes.SNTS.source.includes('BRVMData'));
   assert.equal(quotes.SNTS.basis,'provisional');
-  assert.equal(quotes.SNTS.date,'2025-01-03');
+  assert.equal(quotes.SNTS.date,F.today());
   const d=fixture(),cash=F.calculate(d).all.cash;
   const changed=F.quoteUpdates(d,quotes).next;
   assert.equal(F.calculate(changed).all.cash,cash);
@@ -600,4 +600,41 @@ test('FIN01/FIN12 : positions répétées et mouvements antérieurs à l’ouver
   d.accounts[0].openedOn=dates[2];
   assert.throws(()=>tx(d,'DEPOSIT',{date:dates[1],amount:300}),/date/);
   assert.equal(before(tx(d,'DEPOSIT',{date:dates[2],amount:300})).cash,10300);
+});
+
+test('Scénarios : le reliquat utilise chaque plafond, frais compris',()=>{
+  const d=fixture(); d.quotes={};
+  const result=F.purchaseScenarios(d,{portfolioId:'p',accountId:'a',budget:8000,now:dates[1]});
+  assert.deepEqual(result.scenarios.map(s=>s.cap),[4000,6000,8000]);
+  assert.deepEqual(result.scenarios.map(s=>s.availableRemainder),[4000,6000,8000]);
+  assert.deepEqual(result.scenarios.map(s=>s.cashAfter),[10000,10000,10000]);
+  const funded=F.purchaseScenarios(fixture(),{portfolioId:'p',accountId:'a',budget:8000,now:dates[1]});
+  for(const s of funded.scenarios) {
+    assert.equal(s.availableRemainder,Math.round((s.cap-s.spent)*100)/100);
+    assert.equal(s.cashAfter,Math.round((10000-s.spent)*100)/100);
+    assert.ok(s.spent<=s.cap);
+  }
+});
+test('Secours : GET anonyme, séance clôturée datée, alias TTLC, aucun effet sur les espèces',async()=>{
+  const date=F.today(),symbols=['SNTS','ORAC','CIEC','TTLC','SMBC','NTLC','PALC',
+    ...Array.from({length:35},(_,i)=>'ZZ'+String.fromCharCode(65+Math.floor(i/26))+String.fromCharCode(65+i%26))];
+  const snapshot={_meta:{url:'https://www.brvm.org/fr/cours-actions/0',seance:'Fermée',maj_brvm_date:date,nb_titres:symbols.length},
+    cours:Object.fromEntries(symbols.map((s,i)=>[s,{dernier:1000+i,volume:i===8?0:100}]))};
+  const q=await Q.online(async (url,opt)=>{
+    if(url.endsWith('/feed.json'))return Response.json({enabled:false});
+    if(url===Q.URL)throw Error('CORS');
+    assert.equal(url,Q.FALLBACK_URL);
+    assert.equal(opt.credentials,'omit');assert.equal(opt.method,'GET');assert.equal(opt.referrerPolicy,'no-referrer');
+    return Response.json(snapshot);
+  });
+  assert.equal(q.TOCI.price,1003);
+  assert.equal(q.SNTS.date,date);
+  assert.equal(q.SNTS.basis,'provisional');
+  assert.equal(q.ZZAB.status,'suspended');
+  const d=fixture(),cash=F.calculate(d).all.cash;
+  const next=F.quoteUpdates(d,q).next;
+  assert.equal(F.calculate(next).all.cash,cash);
+  assert.equal(next.transactions.length,0);
+  assert.throws(()=>Q.parseSession(JSON.stringify({...snapshot,_meta:{...snapshot._meta,seance:'Ouverte'}})),/clôturée/);
+  assert.throws(()=>Q.parseSession(JSON.stringify({...snapshot,_meta:{...snapshot._meta,maj_brvm_date:'2025-01-01'}})),/ancienne/);
 });
