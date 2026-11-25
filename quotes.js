@@ -194,7 +194,7 @@
         primary=parse(await readLimit(response,MAX_CSV),{source:DIRECT_SOURCE,official:false,retrievedOn:F.today()});
       }
       if(Object.keys(primary).length<5) {primary=null;throw Error('Source de cotations trop incomplète.');}
-      if(Object.values(primary).every(q=>!F.stale(q,1))) return primary;
+      if(Object.values(primary).every(q=>!F.stale(q,1))&&E.symbols.every(s=>primary[s])) return primary;
     } catch(error) {failure=error;}
     try {
       const fallback=await fallbackSession(fetcher);
