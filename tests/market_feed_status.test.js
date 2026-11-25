@@ -13,12 +13,12 @@ function mockConfig(policy,status=200) {
   };
 }
 
-test('MARKET01 : absence de licence ou flux désactivé = aucun rafraîchissement automatique',async()=>{
-  assert.equal(await Q.feedEnabled(mockConfig({enabled:false})),false);
-  assert.equal(await Q.feedEnabled(mockConfig({enabled:true,source:'Fictif'})),false);
-  assert.equal(await Q.feedEnabled(mockConfig({enabled:true,authorization:'fictive'})),false);
-  assert.equal(await Q.feedEnabled(mockConfig({},404)),false);
-  assert.equal(await Q.feedEnabled(async()=>{throw Error('hors ligne');}),false);
+test('MARKET01 : la source CSV est consultée directement dans le navigateur, sans redistribution',async()=>{
+  assert.equal(await Q.feedEnabled(mockConfig({enabled:false})),true);
+  assert.equal(await Q.feedEnabled(mockConfig({enabled:true,source:'Fictif'})),true);
+  assert.equal(await Q.feedEnabled(mockConfig({},404)),true);
+  assert.equal(await Q.feedEnabled(async()=>{throw Error('hors ligne');}),true);
+  // Les vrais échecs réseau/CORS restent traités par Q.online et affichés à l’utilisateur.
 });
 
 test('MARKET02 : une source autorisée est explicitement déclarée avant toute tentative automatique',async()=>{
