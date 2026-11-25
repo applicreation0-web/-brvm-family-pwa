@@ -882,7 +882,7 @@
     try {
       switch(action) {
         case 'close': close(); break;
-        case 'refresh': await refresh(); break;
+        case 'refresh': if($('#modal').open) close();await refresh();break;
         case 'quote-refresh-now': close();await refresh();break;
         case 'import': $('#import').click();break;
         case 'monthly-backup': await exportMonthlyBackup();break;
