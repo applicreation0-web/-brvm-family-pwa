@@ -129,6 +129,33 @@
       catch(e) {clearTimeout(timer);pendingAndroid.delete(requestId);reject(e);}
     });
   }
+  const FALLBACK_URL='https://raw.githubusercontent.com/harzat/brvm-data-public/main/seance.json';
+  function parseSession(content, now=F.today()) {
+    const data=JSON.parse(content), meta=data?._meta, date=meta?.maj_brvm_date;
+    if(meta?.url!=='https://www.brvm.org/fr/cours-actions/0' || meta.seance!=='Fermée' ||
+       !F.date(date)||date>now||F.stale({date},1,now)||
+       !data.cours||typeof data.cours!=='object'||Array.isArray(data.cours))
+      throw Error('Séance de secours non clôturée, ancienne ou non vérifiable.');
+    const rows=Object.entries(data.cours);
+    if(rows.length<35||rows.length>100||meta.nb_titres!==rows.length)
+      throw Error('Séance de secours incomplète.');
+    const result=[];
+    for(const [raw,row] of rows) {
+      const symbol=F.normalizeSymbol(raw),price=row?.dernier,volume=row?.volume;
+      if(!F.symbol(symbol)||!Number.isFinite(price)||price<=0||
+         !Number.isSafeInteger(volume)||volume<0) continue;
+      result.push([symbol,{price,date,basis:'provisional',source:'BRVM (page cours) via BRVMetrics · séance clôturée',
+        status:volume===0?'suspended':'active',kind:'ACTION',retrievedOn:now,fundamentals:{volume}}]);
+    }
+    if(result.length<35) throw Error('Séance de secours : trop peu de cours valides.');
+    return collect(result);
+  }
+  async function fallbackSession(fetcher) {
+    const response=await fetcher(FALLBACK_URL,{method:'GET',mode:'cors',credentials:'omit',
+      referrerPolicy:'no-referrer',cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});
+    if(!response.ok) throw Error('Source de secours HTTP '+response.status);
+    return parseSession(await readLimit(response,MAX_CSV));
+  }
   async function online(fetcher=fetch) {
     const own={method:'GET',credentials:'same-origin',referrerPolicy:'no-referrer',
       cache:'no-store',signal:AbortSignal.timeout(10000),redirect:'error'};
@@ -152,26 +179,36 @@
         {source:policy.source,official:policy.bulletinBasis===true,retrievedOn:F.today()});
     }
     if(policy?.enabled!==false) throw Error('Configuration de marché invalide.');
-    const viaAndroid=androidCSV();
-    if(viaAndroid!==null) {
-      const csv=await viaAndroid;
-      const quotes=parse(csv,{source:DIRECT_SOURCE+' · téléchargement Android',official:false,retrievedOn:F.today()});
-      if(Object.keys(quotes).length<5) throw Error('Source de cotations Android trop incomplète.');
-      return quotes;
+    let primary, failure;
+    try {
+      const viaAndroid=androidCSV();
+      if(viaAndroid!==null) {
+        primary=parse(await viaAndroid,{source:DIRECT_SOURCE+' · téléchargement Android',official:false,retrievedOn:F.today()});
+      } else {
+        const remote={method:'GET',mode:'cors',credentials:'omit',cache:'no-store',
+          referrerPolicy:'no-referrer',redirect:'error',signal:AbortSignal.timeout(12000)};
+        let response;
+        try {response=await fetcher(URL,remote);}
+        catch {throw Error('Téléchargement direct des cours impossible (connexion ou CORS).');}
+        if(!response.ok) throw Error('Cours BRVMData temporairement indisponibles (HTTP '+response.status+').');
+        primary=parse(await readLimit(response,MAX_CSV),{source:DIRECT_SOURCE,official:false,retrievedOn:F.today()});
+      }
+      if(Object.keys(primary).length<5) {primary=null;throw Error('Source de cotations trop incomplète.');}
+      if(Object.values(primary).every(q=>!F.stale(q,1))) return primary;
+    } catch(error) {failure=error;}
+    try {
+      const fallback=await fallbackSession(fetcher);
+      if(!primary) return fallback;
+      // Preserve primary quotes for equal dates; only take newer or missing observations.
+      const merged={...primary};
+      for(const [s,q] of Object.entries(fallback)) if(!merged[s]||merged[s].date<q.date) merged[s]=q;
+      return merged;
+    } catch(error) {
+      if(primary) return primary;
+      throw Error(String(failure?.message||'Source principale indisponible')+' ; secours : '+String(error.message||error)+'. Import CSV possible.');
     }
-    const remote={method:'GET',mode:'cors',credentials:'omit',cache:'no-store',
-      referrerPolicy:'no-referrer',redirect:'error',signal:AbortSignal.timeout(12000)};
-    let response;
-    try {response=await fetcher(URL,remote);}
-    catch {
-      throw Error('Téléchargement direct des cours impossible (connexion ou CORS). Essayez le lien CSV manuel.');
-    }
-    if(!response.ok) throw Error('Cours BRVMData temporairement indisponibles (HTTP '+response.status+').');
-    const quotes=parse(await readLimit(response,MAX_CSV),
-      {source:DIRECT_SOURCE,official:false,retrievedOn:F.today()});
-    if(Object.keys(quotes).length<5) throw Error('Source de cotations trop incomplète.');
-    return quotes;
   }
+
   async function publicWatch(fetcher=fetch) {
     const response=await fetcher('./market/public-watch.json',{method:'GET',credentials:'same-origin',
       referrerPolicy:'no-referrer',cache:'no-store',signal:AbortSignal.timeout(10000),redirect:'error'});
@@ -193,5 +230,5 @@
     }
     return feed;
   }
-  return {parse,parseManual,online,feedEnabled,publicWatch,receiveAndroidCsv,URL};
+  return {parse,parseManual,parseSession,online,feedEnabled,publicWatch,receiveAndroidCsv,URL,FALLBACK_URL};
 });
