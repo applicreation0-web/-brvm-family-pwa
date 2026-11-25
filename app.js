@@ -29,7 +29,7 @@
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
   let importRevision, mergedImport, importReadTicket=0;
-  let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0, buyDraft=null, marketFailure='';
+  let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0, buyDraft=null, marketFailure='', lastMarketSync=null, marketJob=null;
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
   const coreSymbols=p=>Object.keys(p?.targets||E.targets);
   const findAccount=id=>db.accounts.find(x=>x.id===id);
@@ -339,7 +339,7 @@
   // The guided buy flow is a calculator, not a trade execution or brokerage connection.
   async function purchaseGuide(preselected) {
     // If and only if an authorized quote feed is configured, update before any recommendation.
-    if(navigator.onLine && await Q.feedEnabled()) await refresh(true);
+    if((navigator.onLine || !!window.BRVMAndroid) && await Q.feedEnabled()) await refresh(true);
     const p=getPortfolio();
     if(!p) throw Error('Choisissez un portefeuille.');
     const list=activeAccounts().filter(a=>a.portfolioId===p.id&&a.currency==='XOF');
@@ -750,46 +750,89 @@
   }
   function marketUpdateHelp(message='') {
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
+    const status=lastMarketSync
+      ?'<p><strong>Dernier contrôle :</strong> '+esc(lastMarketSync.checkedAt)+
+        ' · <strong>Dernière séance fournie :</strong> '+esc(lastMarketSync.session||'inconnue')+
+        ' · <strong>Acceptées :</strong> '+fmt.format(lastMarketSync.accepted)+
+        ' · <strong>Ignorées / incompatibles :</strong> '+fmt.format(lastMarketSync.rejected)+'</p>':'';
     modal('Mettre à jour les cours BRVM',
-      '<p><strong>Cours locaux :</strong> '+esc(last?showDate(last):'Aucun cours enregistré')+'</p>'+
-      (message?'<p class="alert error">'+esc(message)+'</p>':'')+
-      '<p class="quiet">La PWA consulte directement, depuis ce navigateur, le CSV public de dernière séance de BRVMData, comme sur l’ancienne version Vercel. Une cotation peut être différée ou indisponible. Date et provenance restent visibles ; aucune valeur ni espèce n’est inventée.</p>'+
+      '<p><strong>Cours locaux :</strong> '+esc(last?showDate(last):'Aucun cours enregistré')+'</p>'+status+
+      (message?'<p class="alert error"><strong>Cause :</strong> '+esc(message)+'</p>':'')+
+      '<p class="quiet">Sur Android, l’APK utilise un téléchargement HTTPS direct avec diagnostic. Sur la PWA Web, le fournisseur bloque le téléchargement automatique (CORS) : le fichier CSV doit être importé depuis l’appareil.</p>'+
       '<div class="market-update-options">'+
-        btn('quote-refresh-now','Actualiser directement les cours','','primary')+
+        btn('quote-refresh-now','Réessayer maintenant','','primary')+
         btn('quote-import','Importer un CSV / JSON local')+
         '<a href="https://brvmdata.com/telechargements/actions-derniere-seance.csv" target="_blank" rel="noopener noreferrer">Télécharger le CSV BRVMData</a>'+
-        '<a href="https://www.brvm.org/fr/cours-actions/officiel" target="_blank" rel="noopener noreferrer">Comparer avec la cotation officielle BRVM</a>'+
+        '<a href="https://www.brvm.org/fr/cours-actions/officiel" target="_blank" rel="noopener noreferrer">Comparer à la BRVM officielle</a>'+
       '</div>'+
-      '<p class="quiet">Si le fournisseur interdit la connexion navigateur (CORS), utilise le téléchargement du CSV puis « Importer ». Les cours du site officiel peuvent être plus récents que ceux de BRVMData. L’actualisation ne modifie jamais les espèces, les titres ou les écritures.</p>');
+      '<p class="quiet">Les cours sont datés de leur séance, pas de leur téléchargement. Le fournisseur peut avoir du retard sur la BRVM. Aucun achat, dividende, frais ou solde espèces ne change lors d’une mise à jour de cotations.</p>');
   }
   async function refresh(silent=false) {
-    if(refreshing||!db) return;
+    if(!db) return;
+    if(refreshing) {
+      if(!silent) {
+        if(marketJob) await marketJob;
+        marketUpdateHelp(marketFailure);
+      }
+      return;
+    }
+    if(busy||silent&&$('#modal').open) {
+      if(!silent) marketUpdateHelp('Opération en cours : réessayez ensuite.');
+      return;
+    }
+    let finishJob;
+    marketJob=new Promise(resolve=>{finishJob=resolve;});
     refreshing=true;lastQuoteAttempt=Date.now();
     try {
       const quotes=await Q.online();
-      marketFailure='';
-      if(!busy && (!silent||!$('#modal').open)) {
-        busy=true;
+      const session=Object.values(quotes).map(q=>q.date).sort().at(-1);
+      const ordered=Object.entries(quotes).sort(([a],[b])=>a.localeCompare(b));
+      let candidate=db,accepted=0,rejected=[];
+      // A single broker's manually verified quote or a conflict with an older
+      // source must not reject every other independently valid stock quote.
+      for(const [symbol,quote] of ordered) {
         try {
-          const result=F.quoteUpdates(db,quotes);
-          if(result.count) {await put(result.next); render();}
-          const latest=Object.values(quotes).map(q=>q.date).sort().at(-1);
-          if(!silent) notify(result.count
-            ?result.count+' cours enregistrés, séance du '+showDate(latest)+'. Vérifie les prix auprès de la BRVM.'
-            :'Dernière séance disponible chez le fournisseur : '+showDate(latest)+'. Aucune nouvelle cotation à enregistrer.');
-        } finally {busy=false;}
+          const result=F.quoteUpdates(candidate,{[symbol]:quote});
+          candidate=result.next;
+          accepted+=result.count;
+        } catch(error) {
+          rejected.push(symbol+': '+error.message);
+        }
+      }
+      if(ordered.length>=5 && rejected.length===ordered.length)
+        throw Error('Aucun cours valide : '+rejected.slice(0,2).join(' ; '));
+      if(accepted) {await put(candidate);render();}
+      lastMarketSync={checkedAt:new Date().toLocaleString('fr-FR'),session,
+        accepted,rejected:rejected.length};
+      marketFailure=rejected.length?rejected.length+' cotations incompatibles : '+rejected.slice(0,2).join(' ; '):'';
+      const current=$('#quote-date');
+      if(current) {
+        const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
+        current.textContent=(last?'Cours enregistrés · '+showDate(last):'Cours absents')+
+          (rejected.length?' · '+rejected.length+' rejet(s)':'')+
+          (F.stale({date:last},1)?' · Ancien':'');
+      }
+      if(!silent) {
+        const msg=accepted?accepted+' cotations actualisées, séance fournisseur du '+showDate(session)+'.':
+          'Aucun cours plus récent accepté. Fournisseur : '+showDate(session)+'.';
+        notify(msg+(rejected.length?' '+rejected.length+' cotations rejetées ; consulter le diagnostic.':''));
+        if(rejected.length) marketUpdateHelp(marketFailure);
       }
     } catch(err) {
-      marketFailure=err.message;
+      marketFailure=String(err.message||err);
+      lastMarketSync={checkedAt:new Date().toLocaleString('fr-FR'),session:null,
+        accepted:0,rejected:0};
       const q=$('#quote-date');
       if(q && db) {
         const latest=Object.values(db.quotes).map(x=>x.date).sort().at(-1);
-        q.textContent=(latest?'Cours locaux · '+showDate(latest):'Aucun cours chargé')+' · Actualisation indisponible';
+        q.textContent=(latest?'Cours locaux · '+showDate(latest):'Aucun cours chargé')+
+          ' · Échec : '+marketFailure.slice(0,90);
       }
-      if(!silent) marketUpdateHelp(err.message);
-      else console.warn('Mise à jour des cotations indisponible : '+err.message);
-    } finally {refreshing=false;}
+      if(!silent) marketUpdateHelp(marketFailure);
+      else console.warn('Actualisation des cours impossible : '+marketFailure);
+    } finally {refreshing=false;finishJob();marketJob=null;}
   }
+
   const phraseFields=()=>field('pass','Phrase secrète (12 caractères ou plus)',input('pass','','password','required minlength="12" maxlength="1024" autocomplete="new-password"'))+
     field('again','Répéter la phrase',input('again','','password','required minlength="12" maxlength="1024" autocomplete="new-password"'));
   function preview(d) {
@@ -1504,7 +1547,7 @@
     });
   }
   function scheduleRefresh() {
-    if(db?.settings.autoQuotes!==false && db && !document.hidden && navigator.onLine && !busy && !$('#modal').open &&
+    if(db?.settings.autoQuotes!==false && db && !document.hidden && (navigator.onLine||!!window.BRVMAndroid) && !busy && !$('#modal').open &&
       Date.now()-lastQuoteAttempt>=15*60*1000) void refresh(true);
   }
   document.addEventListener('visibilitychange',scheduleRefresh);

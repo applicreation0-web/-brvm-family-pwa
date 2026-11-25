@@ -378,7 +378,7 @@ def check(first, second):
         market=page.get_by_role('dialog')
         expect(market.get_by_role('heading', name='Mettre à jour les cours BRVM')).to_be_visible()
         expect(market.get_by_text('temporairement indisponibles',exact=False)).to_be_visible()
-        expect(market.get_by_role('button', name='Actualiser directement les cours')).to_be_visible()
+        expect(market.get_by_role('button', name='Réessayer maintenant')).to_be_visible()
         # Réponse distante simulée : source CSV autorisée, uniquement GET sans donnée de compte.
         context.unroute(market_url)
         market_csv='symbol,session_date,basis,close_xof,traded\n'+''.join(
@@ -387,8 +387,11 @@ def check(first, second):
         context.route(market_url,lambda route: route.fulfill(status=200,
             headers={'access-control-allow-origin':'*','content-type':'text/csv; charset=utf-8'},
             body=market_csv))
-        market.get_by_role('button', name='Actualiser directement les cours').click()
-        expect(page.get_by_text('cours enregistrés',exact=False)).to_be_visible(timeout=10000)
+        market.get_by_role('button', name='Réessayer maintenant').click()
+        expect(page.get_by_text('cotations actualisées',exact=False)).to_be_visible(timeout=10000)
+        # Un cours local postérieur au fournisseur doit rester prioritaire.
+        expect(page.locator('#quote-date')).to_contain_text('25/11/2026')
+        expect(page.get_by_text('séance fournisseur du 24/11/2026',exact=False)).to_be_visible()
         context.unroute(market_url)
         context.route(market_url,lambda route: route.fulfill(status=503,
             headers={'access-control-allow-origin':'*'},body='test offline'))
