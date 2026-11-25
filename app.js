@@ -337,9 +337,12 @@
       <p class="quiet">Les avis confirmés font foi : courtage (plafond 1 %), autres frais et impôts sur les achats/ventes. Les frais bancaires ou de tenue de compte non inclus dans un avis s'enregistrent séparément.</p>`;
   }
   // The guided buy flow is a calculator, not a trade execution or brokerage connection.
-  async function purchaseGuide(preselected) {
+  async function purchaseGuide(preselected, prefill={}) {
     // If and only if an authorized quote feed is configured, update before any recommendation.
-    if((navigator.onLine || !!window.BRVMAndroid) && await Q.feedEnabled()) await refresh(true);
+    if(!prefill.skipRefresh&&(navigator.onLine || !!window.BRVMAndroid) && await Q.feedEnabled()) {
+      if(marketJob) await marketJob;
+      else await refresh(true);
+    }
     const p=getPortfolio();
     if(!p) throw Error('Choisissez un portefeuille.');
     const list=activeAccounts().filter(a=>a.portfolioId===p.id&&a.currency==='XOF');
@@ -352,19 +355,19 @@
       '<p class="quiet">Les propositions utilisent exclusivement les espèces disponibles selon ton journal local, moins les réservations existantes. Vérifie le solde avec le relevé SGI si tu as importé un ancien JSON.</p>'+
       form('buy-budget',
         field('accountId','1. Compte / SGI',select('accountId',accountsOptions(list),preferred.id))+
-        field('budget','2. Montant maximum que je souhaite investir (FCFA)',integer('budget',Math.floor(available)))+
+        field('budget','2. Montant maximum que je souhaite investir (FCFA)',integer('budget',Number.isSafeInteger(prefill.budget)&&prefill.budget>0?Math.min(prefill.budget,Math.floor(available)):Math.floor(available)))+
         '<p class="quiet" id="buy-cash-tip">Disponible sur ce compte : '+fc(available)+'</p>'+
         field('orderMode','3. Mode de préparation',select('orderMode',[
           ['LIMIT','Cours limite · protège le prix maximal par action'],
-          ['MARKET','Au marché · total d’exécution NON garanti']],'LIMIT'))+
-        '<label class="check"><input type="checkbox" name="verifiedOnly"> Conserver seulement les actions dont la conformité est documentée dans l’application.</label>'+
+          ['MARKET','Au marché · total d’exécution NON garanti']],prefill.orderMode==='MARKET'?'MARKET':'LIMIT'))+
+        '<label class="check"><input type="checkbox" name="verifiedOnly" '+(prefill.verifiedOnly?'checked':'')+'> Conserver seulement les actions dont la conformité est documentée dans l’application.</label>'+
         '<p class="quiet">Le moteur produit trois scénarios : 50 %, 75 % ou 100 % du budget. Chaque simulation comprend courtage estimé, autres frais paramétrés et espèces restantes. Aucun ordre n’est transmis.</p>'+
         '<p class="quiet">Cours enregistrés : '+esc(dated?showDate(dated):'aucun')+
         ' · Les scénarios refusent les cotations datant de plus d’une séance ouvrée. Les frais fixes ou taxes non paramétrés doivent être ajoutés avant un ordre réel.</p>'+
         '<p><a href="https://www.brvm.org/fr/cours-actions/officiel" target="_blank" rel="noopener noreferrer">Consulter les cours officiels BRVM</a> · '+
         '<a href="https://www.brvm.org/fr/application-mobile" target="_blank" rel="noopener noreferrer">Application BRVM (différé 15 min)</a></p>',
         'Calculer mes scénarios')+
-      '<div class="actions">'+btn('buy-manual','Saisir un achat déjà exécuté (avis SGI)')+'</div>');
+      '<div class="actions">'+btn('buy-guide-refresh','Actualiser les cours')+btn('buy-manual','Saisir un achat déjà exécuté (avis SGI)')+'</div>');
   }
   function showPurchaseScenarios() {
     const draft=buyDraft;
@@ -995,6 +998,21 @@
           buyDraft={result,revision:record.revision,orderMode,verifiedOnly};
           showPurchaseScenarios();
           if(result.outOfDate.length&&marketFailure) showError(Error(marketFailure));
+          break;
+        }
+        case 'buy-guide-refresh': {
+          const formEl=$('#modal form[data-form=buy-budget]');
+          if(!formEl) throw Error('Rouvrez le parcours Acheter.');
+          const fields=new FormData(formEl), selected=String(fields.get('accountId')||'');
+          const saved={skipRefresh:true,budget:Number(fields.get('budget')),
+            orderMode:fields.get('orderMode'),verifiedOnly:fields.has('verifiedOnly')};
+          const currentPortfolio=portfolioId;
+          close();
+          if(marketJob) await marketJob;
+          else await refresh(true);
+          if(!db||portfolioId!==currentPortfolio||$('#modal').open) break;
+          await purchaseGuide(selected,saved);
+          if(marketFailure) showError(Error(marketFailure));
           break;
         }
         case 'buy-manual': transaction('BUY');break;
