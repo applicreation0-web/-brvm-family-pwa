@@ -29,7 +29,7 @@
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
   let importRevision, mergedImport, importReadTicket=0;
-  let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0, buyDraft=null, marketFailure='', lastMarketSync=null;
+  let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0, buyDraft=null, marketFailure='', lastMarketSync=null, marketJob=null;
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
   const coreSymbols=p=>Object.keys(p?.targets||E.targets);
   const findAccount=id=>db.accounts.find(x=>x.id===id);
@@ -768,7 +768,20 @@
       '<p class="quiet">Les cours sont datés de leur séance, pas de leur téléchargement. Le fournisseur peut avoir du retard sur la BRVM. Aucun achat, dividende, frais ou solde espèces ne change lors d’une mise à jour de cotations.</p>');
   }
   async function refresh(silent=false) {
-    if(refreshing||!db||busy||silent&&$('#modal').open) return;
+    if(!db) return;
+    if(refreshing) {
+      if(!silent) {
+        if(marketJob) await marketJob;
+        marketUpdateHelp(marketFailure);
+      }
+      return;
+    }
+    if(busy||silent&&$('#modal').open) {
+      if(!silent) marketUpdateHelp('Opération en cours : réessayez ensuite.');
+      return;
+    }
+    let finishJob;
+    marketJob=new Promise(resolve=>{finishJob=resolve;});
     refreshing=true;lastQuoteAttempt=Date.now();
     try {
       const quotes=await Q.online();
@@ -817,7 +830,7 @@
       }
       if(!silent) marketUpdateHelp(marketFailure);
       else console.warn('Actualisation des cours impossible : '+marketFailure);
-    } finally {refreshing=false;}
+    } finally {refreshing=false;finishJob();marketJob=null;}
   }
 
   const phraseFields=()=>field('pass','Phrase secrète (12 caractères ou plus)',input('pass','','password','required minlength="12" maxlength="1024" autocomplete="new-password"'))+
