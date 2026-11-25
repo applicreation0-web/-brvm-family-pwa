@@ -1,5 +1,5 @@
 const PREFIX='brvm-family-shell:'+self.registration.scope+'|';
-const CACHE=PREFIX+'v3.6.5-guided-buy-and-stale-check-20261124';
+const CACHE=PREFIX+'v3.6.6-direct-market-provider-20261125';
 const SHELL=['index.html','style.css','engine.js','finance.js','vault.js','quotes.js','analysis.js','review.js','app.js',
   'manifest.webmanifest','icons/icon-192.png','icons/icon-512.png'];
 const urls=new Set(SHELL.map(p=>new URL(p,self.registration.scope).href));
