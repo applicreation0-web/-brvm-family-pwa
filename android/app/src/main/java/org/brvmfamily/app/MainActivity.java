@@ -21,6 +21,10 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Toast;
 
+import java.io.ByteArrayOutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
@@ -46,6 +50,7 @@ public final class MainActivity extends Activity {
     private WebView webView;
     private android.webkit.ValueCallback<Uri[]> fileChooser;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final AtomicBoolean marketLoading = new AtomicBoolean(false);
     private final Object exportGuard = new Object();
     private PendingExport export;
 
@@ -201,8 +206,72 @@ public final class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Read-only source download, entirely on the user's phone. No account
+     * identifier, order, balance, JSON or user-provided URL enters this method.
+     * No public proxy and no third-party scripts inside the offline WebView.
+     */
+    private void deliverMarketCsv(String id, String encoded, String error) {
+        final String payload="window.BRVMQuotes&&window.BRVMQuotes.receiveAndroidCsv('"+
+            id+"','"+encoded+"','"+error+"')";
+        mainHandler.post(() -> {
+            if (webView != null) webView.evaluateJavascript(payload, null);
+        });
+    }
+
+    private void readMarketCsv(String id) {
+        if (id == null || !id.matches("m[0-9]{1,10}")) return;
+        if (!marketLoading.compareAndSet(false, true)) {
+            deliverMarketCsv(id, "", "BUSY");
+            return;
+        }
+        new Thread(() -> {
+            HttpURLConnection connection = null;
+            String encoded="", failure="";
+            try {
+                // This target must remain constant, HTTPS, and source-owned.
+                URL source=new URL("https://brvmdata.com/telechargements/actions-derniere-seance.csv");
+                connection=(HttpURLConnection)source.openConnection();
+                connection.setRequestMethod("GET");
+                connection.setInstanceFollowRedirects(false);
+                connection.setConnectTimeout(8000);
+                connection.setReadTimeout(8000);
+                connection.setUseCaches(false);
+                connection.setRequestProperty("Accept", "text/csv,text/plain;q=0.9,*/*;q=0.5");
+                int status=connection.getResponseCode();
+                if(status!=200) throw new IOException("HTTP");
+                int expected=connection.getContentLength();
+                if(expected>2*1024*1024) throw new IOException("TOO_LARGE");
+                try(InputStream input=connection.getInputStream();
+                    ByteArrayOutputStream output=new ByteArrayOutputStream()) {
+                    byte[] buffer=new byte[8192];
+                    int count, total=0;
+                    while((count=input.read(buffer))>=0) {
+                        if(count==0) continue;
+                        total+=count;
+                        if(total>2*1024*1024) throw new IOException("TOO_LARGE");
+                        output.write(buffer,0,count);
+                    }
+                    if(total==0) throw new IOException("EMPTY");
+                    encoded=Base64.encodeToString(output.toByteArray(),Base64.NO_WRAP);
+                }
+            } catch (IOException | RuntimeException e) {
+                failure="SOURCE_UNAVAILABLE";
+            } finally {
+                if(connection!=null) connection.disconnect();
+                marketLoading.set(false);
+                deliverMarketCsv(id,encoded,failure);
+            }
+        }, "brvm-market-read-only").start();
+    }
+
     /** The bridge is reachable only from the bundled HTTPS virtual origin. */
     private final class FileBridge {
+        @JavascriptInterface
+        public void fetchMarketQuotes(String requestId) {
+            MainActivity.this.readMarketCsv(requestId);
+        }
+
         @JavascriptInterface
         public boolean beginSave(String filename, String mime, int size) {
             synchronized (exportGuard) {
