@@ -47,6 +47,9 @@ def check(first, second):
         context.route(market_url,lambda route: route.fulfill(status=503,
             headers={'access-control-allow-origin':'*','content-type':'text/plain'},
             body='source de test momentanement indisponible'))
+        fallback_url='https://raw.githubusercontent.com/harzat/brvm-data-public/main/seance.json'
+        context.route(fallback_url,lambda route: route.fulfill(status=503,
+            headers={'access-control-allow-origin':'*'},body='test offline'))
         page = context.new_page()
         visited = []
 
@@ -201,6 +204,8 @@ def check(first, second):
         expect(guide.get_by_text('Investir jusqu’à 100 % du budget')).to_be_visible()
         expect(guide.get_by_text('Cours absents ou trop anciens')).to_be_visible()
         expect(guide.get_by_role('button',name='Préparer ces ordres à cours limite')).to_have_count(0)
+        expect(guide.get_by_role('button',name='Actualiser les cours')).to_be_visible()
+        expect(guide.get_by_text('Non utilisé sur ce budget : 15',exact=False)).to_be_visible()
         guide.get_by_role('button',name='Changer SGI ou budget').click()
         guide.get_by_role('button',name='Saisir un achat déjà exécuté (avis SGI)').click()
         buy=page.get_by_role('dialog')
@@ -546,7 +551,7 @@ def check(first, second):
         page.get_by_role('button', name='Effacer définitivement').click()
         expect(page.locator('.total')).to_have_count(0)
         assert all(method=='GET' and not body and ('browser-only' not in url) and
-                   ((url.startswith(first+'/') and '?' not in url) or url==market_url)
+                   ((url.startswith(first+'/') and '?' not in url) or url in (market_url,fallback_url))
                    for method,url,body in visited), 'Une transmission inattendue a été observée.'
         fresh.close()
         context.close()
@@ -564,6 +569,16 @@ def check(first, second):
           } catch(e) {return {ok:false,error:String(e).slice(0,190)};}
         }""")
         print('Diagnostic CORS direct BRVMData:',json.dumps(verdict,ensure_ascii=False))
+        fallback_verdict=probe_page.evaluate("""async (url) => {
+          try {
+            const r=await fetch(url,{method:'GET',mode:'cors',credentials:'omit',cache:'no-store',
+              referrerPolicy:'no-referrer',signal:AbortSignal.timeout(10000)});
+            if(!r.ok) return {ok:false,status:r.status};
+            const q=BRVMQuotes.parseSession(await r.text());
+            return {ok:true,count:Object.keys(q).length,date:q.SNTS?.date,core:['SNTS','ORAC','CIEC','TOCI','SMBC','NTLC','PALC'].every(s=>!!q[s])};
+          } catch(e) {return {ok:false,error:String(e).slice(0,190)};}
+        }""",fallback_url)
+        print('Diagnostic CORS secours BRVMetrics:',json.dumps(fallback_verdict,ensure_ascii=False))
         try:
             source_request=urllib.request.Request(market_url,headers={
                 'Accept':'text/csv,text/plain',
