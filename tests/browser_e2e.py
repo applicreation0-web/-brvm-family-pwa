@@ -175,6 +175,27 @@ def check(first, second):
         expect(page.get_by_role('button', name='Modifier mes données et mes actions')).to_be_visible()
         expect(page.get_by_role('button', name='Acheter', exact=True)).to_be_visible()
         expect(page.get_by_role('button', name='Vendre', exact=True)).to_be_visible()
+        # A small budget on a first SGI must never carry into a different SGI.
+        switch_context=browser.new_context()
+        switch_context.route(market_url,lambda route: route.fulfill(status=503,headers={'access-control-allow-origin':'*'},body='test offline'))
+        switch_context.route(fallback_url,lambda route: route.fulfill(status=503,headers={'access-control-allow-origin':'*'},body='test offline'))
+        switch_page=switch_context.new_page()
+        switch_page.goto(second+'/')
+        two=json.loads(json.dumps(data))
+        two['institutions'].append({'id':'browser-only-s2','label':'Autre SGI fictive'})
+        two['accounts'].append({**two['accounts'][0],'id':'browser-only-a2','institutionId':'browser-only-s2','label':'Autre compte fictif','cash':420000})
+        upload(switch_page,json.dumps(two).encode())
+        confirm_import(switch_page,initialize=True)
+        switch_page.get_by_role('button',name='Acheter',exact=True).click()
+        switch_guide=switch_page.get_by_role('dialog')
+        switch_guide.locator('[name=accountId]').select_option('browser-only-a')
+        switch_guide.locator('[name=budget]').fill('2500')
+        switch_guide.locator('[name=accountId]').select_option('browser-only-a2')
+        assert switch_guide.locator('[name=budget]').input_value()=='420000'
+        switch_guide.locator('[name=budget]').fill('1000')
+        switch_guide.get_by_role('button',name='Utiliser toutes les espèces disponibles').click()
+        assert switch_guide.locator('[name=budget]').input_value()=='420000'
+        switch_context.close()
         # Vendre 2 actions avec frais vrais, puis racheter une action sur avis.
         page.get_by_role('button', name='Vendre', exact=True).click()
         sale=page.get_by_role('dialog')
