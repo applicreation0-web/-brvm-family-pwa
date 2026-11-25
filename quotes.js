@@ -91,32 +91,50 @@
       return result+decoder.decode();
     } finally {await reader.cancel().catch(()=>{});}
   }
-  // The public shell is shipped without an authorized live redistribution feed.
-  // Fail closed and prefer user-initiated, provenance-checked local CSV import.
-  async function feedEnabled(fetcher=fetch) {
-    try {
-      const response=await fetcher('./market/feed.json',{method:'GET',credentials:'same-origin',
-        referrerPolicy:'no-referrer',cache:'no-store',signal:AbortSignal.timeout(10000),redirect:'error'});
-      if(!response.ok) return false;
-      const policy=JSON.parse(await readLimit(response,8192));
-      return policy?.enabled===true && typeof policy.source==='string' &&
-        typeof policy.authorization==='string' && !!policy.authorization.trim();
-    } catch {return false;}
+  // The browser retrieves this downloadable, published CSV directly from its source.
+  // No portfolio data is ever sent, and no copy of market prices is republished by GitHub.
+  // This is a delayed end-of-session information source, not a licensed real-time feed.
+  const DIRECT_SOURCE='BRVMData — cours de dernière séance (consultation directe)';
+  async function feedEnabled() {
+    // The direct public download needs no broker credentials. Availability is tested
+    // on each actual fetch: it may fail because of browser CORS or supplier outage.
+    return true;
   }
   async function online(fetcher=fetch) {
-    const options={method:'GET',credentials:'same-origin',referrerPolicy:'no-referrer',cache:'no-store',
-      signal:AbortSignal.timeout(10000),redirect:'error'};
-    const config=await fetcher('./market/feed.json',options);
-    if(config.status===404) throw Error('Aucun flux autorisé configuré pour cette installation.');
-    if(!config.ok) throw Error('Configuration du flux indisponible.');
-    const policy=JSON.parse(await readLimit(config,8192));
-    if(policy.enabled!==true) throw Error('Aucun flux autorisé configuré pour cette installation.');
-    if(typeof policy.source!=='string'||!policy.source.trim()||policy.source.length>200||
-      typeof policy.authorization!=='string'||!policy.authorization.trim())
-      throw Error('Déploiement du flux incomplet : source et autorisation requises.');
-    const r=await fetcher('./market/latest.csv',options);
-    if(!r.ok) throw Error('Flux de cotations indisponible.');
-    return parse(await readLimit(r,MAX_CSV),{source:policy.source,official:policy.bulletinBasis===true,retrievedOn:F.today()});
+    const own={method:'GET',credentials:'same-origin',referrerPolicy:'no-referrer',
+      cache:'no-store',signal:AbortSignal.timeout(10000),redirect:'error'};
+    let policy={enabled:false};
+    try {
+      const config=await fetcher('./market/feed.json',own);
+      if(config.ok) policy=JSON.parse(await readLimit(config,8192));
+      else if(config.status!==404) throw Error('Configuration du flux de marché indisponible.');
+    } catch(error) {
+      // Failure to retrieve a missing local configuration is not an authorization:
+      // use the direct source instead, never a public mirror or proxy.
+      if(!/fetch|network|timed? ?out|failed/i.test(String(error))) throw error;
+    }
+    if(policy?.enabled===true) {
+      if(typeof policy.source!=='string'||!policy.source.trim()||policy.source.length>200||
+        typeof policy.authorization!=='string'||!policy.authorization.trim())
+        throw Error('Flux autorisé mal configuré : source et autorisation requises.');
+      const r=await fetcher('./market/latest.csv',own);
+      if(!r.ok) throw Error('Flux de cotations autorisé indisponible.');
+      return parse(await readLimit(r,MAX_CSV),
+        {source:policy.source,official:policy.bulletinBasis===true,retrievedOn:F.today()});
+    }
+    if(policy?.enabled!==false) throw Error('Configuration de marché invalide.');
+    const remote={method:'GET',mode:'cors',credentials:'omit',cache:'no-store',
+      referrerPolicy:'no-referrer',redirect:'error',signal:AbortSignal.timeout(12000)};
+    let response;
+    try {response=await fetcher(URL,remote);}
+    catch {
+      throw Error('Téléchargement direct des cours impossible (connexion ou CORS). Essayez le lien CSV manuel.');
+    }
+    if(!response.ok) throw Error('Cours BRVMData temporairement indisponibles (HTTP '+response.status+').');
+    const quotes=parse(await readLimit(response,MAX_CSV),
+      {source:DIRECT_SOURCE,official:false,retrievedOn:F.today()});
+    if(Object.keys(quotes).length<5) throw Error('Source de cotations trop incomplète.');
+    return quotes;
   }
   async function publicWatch(fetcher=fetch) {
     const response=await fetcher('./market/public-watch.json',{method:'GET',credentials:'same-origin',
