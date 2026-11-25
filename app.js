@@ -402,7 +402,7 @@
       '<p><strong>Disponible réel selon la PWA :</strong> '+fc(r.available)+
       ' · <strong>Budget demandé :</strong> '+fc(r.budget)+'</p>'+
       '<p class="quiet">Pour un achat partiel : saisissez seulement la quantité réellement exécutée sur l’avis. À la prochaine ouverture d’Acheter, les scénarios seront recalculés avec les nouvelles espèces et positions.</p>'+
-      warning+market+'<div class="buy-scenarios">'+panels+'</div>'+
+      warning+'<div class="actions">'+btn('buy-refresh','Actualiser les cours','','primary')+btn('quote-import','Importer CSV / JSON')+'</div>'+market+'<div class="buy-scenarios">'+panels+'</div>'+
       '<div class="actions">'+btn('buy-restart','Changer SGI ou budget')+'</div>'+
       '<p class="quiet">Les scénarios suivent les écarts aux cibles CORE, et ne constituent pas une preuve de sous-valorisation ou de conformité charia. Vérifiez les cours et le justificatif avant exécution.</p>'+
       '<p><a href="https://www.brvm.org/fr/cours-actions/officiel" target="_blank" rel="noopener noreferrer">Vérifier les cours actuels sur la BRVM</a></p>');
@@ -758,7 +758,7 @@
     modal('Mettre à jour les cours BRVM',
       '<p><strong>Cours locaux :</strong> '+esc(last?showDate(last):'Aucun cours enregistré')+'</p>'+status+
       (message?'<p class="alert error"><strong>Cause :</strong> '+esc(message)+'</p>':'')+
-      '<p class="quiet">Sur Android, l’APK utilise un téléchargement HTTPS direct avec diagnostic. Sur la PWA Web, le fournisseur bloque le téléchargement automatique (CORS) : le fichier CSV doit être importé depuis l’appareil.</p>'+
+      '<p class="quiet">Actualisation directe BRVMData, puis flux public BRVMetrics en secours (séance clôturée et datée). Si les deux échouent, importez un CSV ou JSON local.</p>'+
       '<div class="market-update-options">'+
         btn('quote-refresh-now','Réessayer maintenant','','primary')+
         btn('quote-import','Importer un CSV / JSON local')+
@@ -983,6 +983,20 @@
         case 'open-orders': goTo('invest');$('.operations-orders').open=true;$('.operations-orders').scrollIntoView({block:'start'});break;
         case 'trade-buy': await purchaseGuide();break;
         case 'buy-restart': await purchaseGuide(buyDraft?.result.accountId);break;
+        case 'buy-refresh': {
+          if(!buyDraft) throw Error('Rouvrez le parcours Acheter.');
+          const {result:previous,orderMode,verifiedOnly}=buyDraft;
+          close();
+          if(marketJob) await marketJob;
+          else await refresh(true);
+          if(!db||portfolioId!==previous.portfolioId||$('#modal').open) break;
+          const result=F.purchaseScenarios(db,{portfolioId,accountId:previous.accountId,
+            budget:previous.budget,verifiedOnly});
+          buyDraft={result,revision:record.revision,orderMode,verifiedOnly};
+          showPurchaseScenarios();
+          if(result.outOfDate.length&&marketFailure) showError(Error(marketFailure));
+          break;
+        }
         case 'buy-manual': transaction('BUY');break;
         case 'buy-executed': {
           if(!buyDraft||buyDraft.revision!==record.revision) throw Error('Vos espèces ont changé : recalculez les scénarios.');
@@ -1166,7 +1180,7 @@
           const orderMode=f.get('orderMode')==='MARKET'?'MARKET':'LIMIT';
           const result=F.purchaseScenarios(db,{portfolioId,accountId,
             budget:number(f,'budget'),verifiedOnly:f.has('verifiedOnly')});
-          buyDraft={result,revision:record.revision,orderMode};
+          buyDraft={result,revision:record.revision,orderMode,verifiedOnly:f.has('verifiedOnly')};
           showPurchaseScenarios();
           return;
         }
