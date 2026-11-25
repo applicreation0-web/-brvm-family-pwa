@@ -238,6 +238,7 @@ public final class MainActivity extends Activity {
                 connection.setReadTimeout(8000);
                 connection.setUseCaches(false);
                 connection.setRequestProperty("Accept", "text/csv,text/plain;q=0.9,*/*;q=0.5");
+                connection.setRequestProperty("User-Agent", "BRVM-Family-Android-ReadOnly/1.0");
                 int status=connection.getResponseCode();
                 if(status!=200) throw new IOException("HTTP");
                 int expected=connection.getContentLength();
