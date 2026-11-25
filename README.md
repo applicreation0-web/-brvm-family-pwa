@@ -1,3 +1,9 @@
+# V3.6.8 — Cotations de secours et scénarios d’achat
+
+- Flux de secours BRVMetrics, consultation personnelle directe sur GitHub Raw, sans copie des cours dans ce dépôt. Une séance clôturée datée, suffisamment complète et non obsolète est requise. Qualité provisoire, pas de certification officielle ni temps réel ; titres sans volume exclus des propositions par prudence.
+- Le flux principal garde la priorité à date égale ; le secours intervient en cas de panne, de cours anciens ou de couverture CORE incomplète. Aucun compte, solde ni position transmis.
+- Actualisation dans les fenêtres Acheter, conservation du budget et recalcul ; reliquat calculé sur le plafond du scénario. Tests unitaires et recette Chromium mis à jour. La publication Pages reste soumise aux contrôles GitHub Actions et la connectivité réelle doit être validée.
+
 # V3.6.7 — Diagnostics précis des cours et correction du téléchargement Android
 
 La compilation et la validité de la signature ne prouvent pas qu'une cotation a été récupérée. Cette version traite l'échec d'actualisation signalé par l'utilisateur.
