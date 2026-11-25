@@ -9,6 +9,7 @@ from io import BytesIO
 import subprocess
 import sys
 import tempfile
+import urllib.request
 from threading import Thread
 
 from playwright.sync_api import expect, sync_playwright
@@ -560,6 +561,20 @@ def check(first, second):
           } catch(e) {return {ok:false,error:String(e).slice(0,190)};}
         }""")
         print('Diagnostic CORS direct BRVMData:',json.dumps(verdict,ensure_ascii=False))
+        try:
+            source_request=urllib.request.Request(market_url,headers={
+                'Accept':'text/csv,text/plain',
+                'User-Agent':'BRVM-Family-Android-ReadOnly/1.0'})
+            with urllib.request.urlopen(source_request,timeout=8) as source_response:
+                head=source_response.read(300).decode('utf-8','replace')
+                print('Diagnostic GET natif HTTPS BRVMData:',json.dumps({
+                  'http':source_response.status,
+                  'type':source_response.headers.get('Content-Type'),
+                  'cors':source_response.headers.get('Access-Control-Allow-Origin'),
+                  'csv_header':head.splitlines()[0][:110]},ensure_ascii=False))
+        except Exception as diagnostic_error:
+            print('Diagnostic GET natif HTTPS BRVMData indisponible:',
+                  type(diagnostic_error).__name__)
         probe_context.close()
         browser.close()
 
