@@ -603,8 +603,8 @@ test('FIN01/FIN12 : positions répétées et mouvements antérieurs à l’ouver
 });
 
 test('Scénarios : le reliquat utilise chaque plafond, frais compris',()=>{
-  const d=fixture(); d.quotes={};
-  const result=F.purchaseScenarios(d,{portfolioId:'p',accountId:'a',budget:8000,now:dates[1]});
+  const d=fixture();
+  const result=F.purchaseScenarios(d,{portfolioId:'p',accountId:'a',budget:8000,now:dates[4]});
   assert.deepEqual(result.scenarios.map(s=>s.cap),[4000,6000,8000]);
   assert.deepEqual(result.scenarios.map(s=>s.availableRemainder),[4000,6000,8000]);
   assert.deepEqual(result.scenarios.map(s=>s.cashAfter),[10000,10000,10000]);
