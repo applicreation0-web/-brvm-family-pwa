@@ -356,7 +356,7 @@
       form('buy-budget',
         field('accountId','1. Compte / SGI',select('accountId',accountsOptions(list),preferred.id))+
         field('budget','2. Montant maximum que je souhaite investir (FCFA)',integer('budget',Number.isSafeInteger(prefill.budget)&&prefill.budget>0?Math.min(prefill.budget,Math.floor(available)):Math.floor(available)))+
-        '<p class="quiet" id="buy-cash-tip">Disponible sur ce compte : '+fc(available)+'</p>'+
+        '<p class="quiet" id="buy-cash-tip">Disponible sur ce compte : '+fc(available)+'</p>'+btn('buy-all-cash','Utiliser toutes les espèces disponibles')+
         field('orderMode','3. Mode de préparation',select('orderMode',[
           ['LIMIT','Cours limite · protège le prix maximal par action'],
           ['MARKET','Au marché · total d’exécution NON garanti']],prefill.orderMode==='MARKET'?'MARKET':'LIMIT'))+
@@ -394,7 +394,7 @@
           kpi('Espèces restantes sur ce compte',fc(sc.cashAfter))+
           kpi('Frais inclus',fc(sc.fees))+'</div>'+
         (items.length?table(['Titre','Quantité','Cours de référence','Frais estimés','Total','Après avis SGI'],items)
-          :'<p class="empty">Aucun achat possible à ce plafond avec des cours encore valides. Conserver les espèces en attendant une cotation fiable.</p>')+
+          :'<p class="empty">'+(sc.ignored.length===Object.keys(sc.plan.targets).length?'Aucun titre CORE admissible : vérifier les cotations et les filtres de conformité.':'Aucun achat compatible avec ce plafond et les écarts aux cibles CORE, frais inclus. Augmentez le budget si nécessaire.')+'</p>')+
         '<p class="quiet">Budget du scénario : '+fc(sc.cap)+' · Non utilisé sur ce budget : '+fc(sc.availableRemainder)+
         '. Les montants non exécutés restent des espèces.</p>'+
         (items.length&&draft.orderMode==='LIMIT'?'<div class="actions">'+
@@ -403,7 +403,7 @@
     }).join('');
     modal('Scénarios d’achat · '+accName(r.accountId),
       '<p><strong>Disponible réel selon la PWA :</strong> '+fc(r.available)+
-      ' · <strong>Budget demandé :</strong> '+fc(r.budget)+'</p>'+
+      ' · <strong>Budget demandé :</strong> '+fc(r.budget)+'</p>'+(r.budget<r.available?'<p class="quiet">Le budget demandé est inférieur aux espèces disponibles de '+fc(r.available-r.budget)+'. Pour utiliser davantage, choisir Changer SGI ou budget.</p>':'')+
       '<p class="quiet">Pour un achat partiel : saisissez seulement la quantité réellement exécutée sur l’avis. À la prochaine ouverture d’Acheter, les scénarios seront recalculés avec les nouvelles espèces et positions.</p>'+
       warning+'<div class="actions">'+btn('buy-refresh','Actualiser les cours','','primary')+btn('quote-import','Importer CSV / JSON')+'</div>'+market+'<div class="buy-scenarios">'+panels+'</div>'+
       '<div class="actions">'+btn('buy-restart','Changer SGI ou budget')+'</div>'+
@@ -986,6 +986,13 @@
         case 'open-orders': goTo('invest');$('.operations-orders').open=true;$('.operations-orders').scrollIntoView({block:'start'});break;
         case 'trade-buy': await purchaseGuide();break;
         case 'buy-restart': await purchaseGuide(buyDraft?.result.accountId);break;
+        case 'buy-all-cash': {
+          const f=$('#modal form[data-form=buy-budget]');
+          if(!f) throw Error('Rouvrez le parcours Acheter.');
+          const a=calc.accounts.find(a=>a.id===f.elements.accountId.value);
+          f.elements.budget.value=String(Math.max(0,Math.floor(a?.available||0)));
+          break;
+        }
         case 'buy-refresh': {
           if(!buyDraft) throw Error('Rouvrez le parcours Acheter.');
           const {result:previous,orderMode,verifiedOnly}=buyDraft;
@@ -1498,7 +1505,7 @@
       const a=calc.accounts.find(a=>a.id===el.value);
       const available=Math.max(0,Math.floor(a?.available||0));
       const form=el.form,amount=form.elements.budget;
-      amount.value=String(Math.min(Math.max(0,Number(amount.value)||0),available));
+      amount.value=String(available); // New SGI: default to its own available cash, never carry a different account's budget.
       const tip=form.querySelector('#buy-cash-tip');
       if(tip) tip.textContent='Disponible sur ce compte : '+fc(available);
     }
