@@ -43,7 +43,9 @@ class BuildTests(unittest.TestCase):
             self.assertIsNotNone(script)
             self.assertTrue((self.build / script).is_file())
             subprocess.run(['node', '--check', str(self.build / script)], check=True)
-        self.assertIn("connect-src 'self' https://brvmdata.com;", page.csp)
+        connections = [d.split()[1:] for d in page.csp.split(';') if d.strip().startswith('connect-src ')]
+        self.assertEqual(connections, [["'self'", "https://brvmdata.com",
+            "https://raw.githubusercontent.com/harzat/brvm-data-public/main/seance.json"]])
         self.assertNotIn('http://', page.csp)
         self.assertNotIn('connect-src *', page.csp)
         self.assertIn("script-src 'self';", page.csp)
