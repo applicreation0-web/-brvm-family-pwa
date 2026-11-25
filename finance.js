@@ -825,10 +825,11 @@
     calculate(next); // Full ledger and referential invariants; no commit on failure.
     return next;
   }
-  function propose(d,{portfolioId,accountIds,mode='cibles',budget=0,manual={},exceptional=false,verifiedOnly=false,now=today()}) {
+  function propose(d,{portfolioId,accountIds,mode='cibles',budget=0,manual={},exceptional=false,verifiedOnly=false,now=today(),limitPrices={}}) {
     const p=calculate(d).portfolios.find(x=>x.id===portfolioId);
     fail(p && ['cibles','mensuel','equilibre','equilibre-sgi','egalisation','manuel'].includes(mode),'Portefeuille ou mode inconnu.');
     const coreSymbols=Object.keys(p.targets);
+    fail(limitPrices && typeof limitPrices==='object' && !Array.isArray(limitPrices) && Object.entries(limitPrices).every(([symbol,price])=>coreSymbols.includes(symbol)&&Number.isSafeInteger(price)&&price>0&&price<=1000000000),'Cours limite invalide : saisir un prix entier positif en FCFA pour un titre CORE.');
     const requested=new Set(accountIds), accounts=p.accounts.filter(a=>requested.has(a.id) && a.currency==='XOF' && !isArchived(d,a));
     fail(accounts.length===requested.size && accounts.length>0,'Sélectionner des comptes XOF actifs du même portefeuille.');
     fail(Number.isSafeInteger(budget) && budget>=0,'Budget entier en FCFA obligatoire.');
@@ -864,17 +865,17 @@
     while(remaining>0) {
       let best;
       for(const a of accounts) for(const s of eligible) {
-        const price=d.quotes[s].price, rate=a.brokerRate+a.otherRate;
+        const reference=d.quotes[s].price, price=limitPrices[s]??reference, rate=a.brokerRate+a.otherRate;
         const avail=Math.min(limits[a.id],remaining), full=price*(1+rate);
         const gap=goals[s]-values[s];
-        if(full>avail || gap<price/2) continue;
+        if(full>avail || gap<reference/2) continue;
         const score=gap/Math.max(1,goals[s]) + Math.min(1,avail/Math.max(1,spendable))*.01;
-        if(!best||score>best.score) best={a,s,price,rate,avail,full,gap,score};
+        if(!best||score>best.score) best={a,s,price,reference,rate,avail,full,gap,score};
       }
       if(!best) break;
-      const {a,s,price,rate,avail,full,gap}=best, k=key(a.id,s);
-      const qty=Math.max(1,Math.min(Math.floor(avail/full),Math.round(gap/price)));
-      const l=lines.get(k)||{accountId:a.id,symbol:s,qty:0,price,estimateRate:rate,quote:d.quotes[s],reason:'Réduit le déficit de pondération CORE.'};
+      const {a,s,price,reference,rate,avail,full,gap}=best, k=key(a.id,s);
+      const qty=Math.max(1,Math.min(Math.floor(avail/full),Math.round(gap/reference)));
+      const l=lines.get(k)||{accountId:a.id,symbol:s,qty:0,price,referencePrice:reference,estimateRate:rate,quote:d.quotes[s],reason:'Réduit le déficit de pondération CORE.'};
       const previous=l.total||0;
       l.qty+=qty; l.amount=Math.round(price*l.qty*100)/100;
       l.broker=Math.floor(l.amount*a.brokerRate*100+1e-7)/100;
@@ -884,7 +885,7 @@
       const spent=l.total-previous;
       limits[a.id]-=spent;
       remaining-=spent;
-      values[s]+=price*qty;
+      values[s]+=reference*qty;
     }
     const weights=v=>{
       const total=Object.values(v).reduce((n,x)=>n+x,0);
@@ -909,7 +910,7 @@
 
   // Scenarios are purely read-only and never create orders, debit cash or
   // account for an expected execution. Only actually available cash is usable.
-  function purchaseScenarios(d,{portfolioId,accountId,budget,verifiedOnly=false,now=today()}) {
+  function purchaseScenarios(d,{portfolioId,accountId,budget,verifiedOnly=false,now=today(),limitPrices={}}) {
     const computed=calculate(d);
     const portfolio=computed.portfolios.find(p=>p.id===portfolioId);
     const account=computed.accounts.find(a=>a.id===accountId);
@@ -929,7 +930,7 @@
     const scenarios=options.map(option=>{
       const cap=Math.floor(budget*option.factor);
       const plan=propose(quoteChecked,{portfolioId,accountIds:[accountId],mode:'cibles',
-        budget:cap,exceptional:true,verifiedOnly,now});
+        budget:cap,exceptional:true,verifiedOnly,now,limitPrices});
       const total=Math.round(plan.lines.reduce((n,l)=>n+l.total,0)*100)/100;
       const fees=Math.round(plan.lines.reduce((n,l)=>n+l.broker+l.other,0)*100)/100;
       fail(total<=cap+.000001 && total<=available+.000001 &&
