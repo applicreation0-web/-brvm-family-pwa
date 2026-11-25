@@ -284,6 +284,33 @@ test('MKT02 : source CSV directe de dernière séance (ancienne logique Vercel),
   assert.equal(F.calculate(changed).all.cash,cash);
   assert.equal(changed.transactions.length,0);
 });
+test('MKT04 : APK Android lit le CSV hors CORS via URL native fixe, sans requête contenant des comptes',async()=>{
+  const csv='symbol,session_date,close_xof,traded\n'+
+    ['SNTS','ORAC','CIEC','TOCI','SMBC','NTLC','PALC'].map((sym,i)=>
+      sym+',2025-01-03,'+(5000+i*100)+',true').join('\n');
+  const payload=Buffer.from(csv,'utf8').toString('base64');
+  let invoked=0;
+  globalThis.BRVMAndroid={fetchMarketQuotes(id){
+    assert.match(id,/^m[0-9]{1,10}$/);
+    invoked++;
+    queueMicrotask(()=>Q.receiveAndroidCsv(id,payload,''));
+  }};
+  try {
+    const result=await Q.online(async url=>{
+      assert.equal(url,'./market/feed.json');
+      return Response.json({enabled:false});
+    });
+    assert.equal(invoked,1);
+    assert.equal(result.SNTS.price,5000);
+    assert.equal(result.SNTS.date,'2025-01-03');
+    assert.equal(result.SNTS.basis,'provisional');
+    assert.match(result.SNTS.source,/Android/);
+    globalThis.BRVMAndroid={fetchMarketQuotes(id){
+      queueMicrotask(()=>Q.receiveAndroidCsv(id,'','SOURCE_UNAVAILABLE'));
+    }};
+    await assert.rejects(Q.online(async()=>Response.json({enabled:false})),/SOURCE_UNAVAILABLE/);
+  } finally {delete globalThis.BRVMAndroid;}
+});
 test('MKT03 : indisponibilité, source incomplète et connexion refusée ne remplacent pas les cours',async()=>{
   const bad=async url=>url.endsWith('/feed.json')?Response.json({enabled:false}):
     new Response('symbol,session_date,close_xof\nSNTS,2025-01-03,2000');
