@@ -937,7 +937,7 @@
         'Simulation non conforme au budget disponible : aucune proposition ne sera affichée.');
       return {key:option.key,label:option.label,cap,spent:total,fees,
         cashAfter:Math.round((account.available-total)*100)/100,
-        availableRemainder:Math.round((budget-total)*100)/100,
+        availableRemainder:Math.round((cap-total)*100)/100,
         lines:plan.lines,ignored:plan.ignored,plan,
         explanation:'Répartition indicative vers les titres CORE sous-pondérés, sans exécution.'};
     });
