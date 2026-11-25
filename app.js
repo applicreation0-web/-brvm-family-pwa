@@ -29,7 +29,7 @@
   const resetKey=V.RESET_NOTICE+V.scope();
   const localChannel=typeof BroadcastChannel==='function'?new BroadcastChannel(resetKey):null;
   let importRevision, mergedImport, importReadTicket=0;
-  let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0, buyDraft=null;
+  let quoteOptions=null, checkpoint=null, restoreFocus=null, sgiFilter='', historyMonth='', accountFilter='', journalLimit=40, archiveLimit=40, lastQuoteAttempt=0, buyDraft=null, marketFailure='';
   const getPortfolio=()=>calc.portfolios.find(x=>x.id===portfolioId);
   const coreSymbols=p=>Object.keys(p?.targets||E.targets);
   const findAccount=id=>db.accounts.find(x=>x.id===id);
@@ -733,7 +733,8 @@
       `<button type="button" data-page="${key}" ${key===tab?'aria-current="page"':''}><span aria-hidden="true">${icon}</span>${label}</button>`).join('');
     $('#page-title').textContent=pages[tab][0];
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
-    $('#quote-date').textContent=last?'Cours locaux, non temps réel · '+showDate(last):'Aucun cours chargé';
+    $('#quote-date').textContent=(last?'Cours locaux, non temps réel · '+showDate(last):'Aucun cours chargé')+
+      (marketFailure?' · Actualisation indisponible':'');
     $('#view').innerHTML=
       {dashboard,accounts:accountsView,invest:investment,orders:ordersView,events:eventsView,
       history:historyView,settings:settingsView,data:dataView}[tab]();
@@ -766,6 +767,7 @@
     refreshing=true;lastQuoteAttempt=Date.now();
     try {
       const quotes=await Q.online();
+      marketFailure='';
       if(!busy && (!silent||!$('#modal').open)) {
         busy=true;
         try {
@@ -778,6 +780,12 @@
         } finally {busy=false;}
       }
     } catch(err) {
+      marketFailure=err.message;
+      const q=$('#quote-date');
+      if(q && db) {
+        const latest=Object.values(db.quotes).map(x=>x.date).sort().at(-1);
+        q.textContent=(latest?'Cours locaux · '+showDate(latest):'Aucun cours chargé')+' · Actualisation indisponible';
+      }
       if(!silent) marketUpdateHelp(err.message);
       else console.warn('Mise à jour des cotations indisponible : '+err.message);
     } finally {refreshing=false;}
