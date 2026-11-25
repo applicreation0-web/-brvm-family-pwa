@@ -100,6 +100,35 @@
     // on each actual fetch: it may fail because of browser CORS or supplier outage.
     return true;
   }
+  // Android's local WebView has no cross-origin permissions. The native bridge
+  // fetches only the hardcoded public CSV URL, without ever receiving account data.
+  let androidSeq=0;
+  const pendingAndroid=new Map();
+  function receiveAndroidCsv(requestId,base64,error) {
+    const pending=pendingAndroid.get(requestId);
+    if(!pending) return;
+    pendingAndroid.delete(requestId);
+    clearTimeout(pending.timer);
+    if(error) {pending.reject(Error('Téléchargement des cotations Android indisponible : '+error));return;}
+    try {
+      const raw=atob(base64),bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
+      if(bytes.length===0||bytes.length>MAX_CSV) throw Error('Réponse de cotations invalide.');
+      pending.resolve(new TextDecoder('utf-8',{fatal:true}).decode(bytes));
+    } catch(e) {pending.reject(e);}
+  }
+  function androidCSV() {
+    if(typeof globalThis.BRVMAndroid?.fetchMarketQuotes!=='function') return null;
+    return new Promise((resolve,reject)=>{
+      const requestId='m'+(++androidSeq);
+      const timer=setTimeout(()=>{
+        pendingAndroid.delete(requestId);
+        reject(Error('Expiration du délai de téléchargement Android.'));
+      },16000);
+      pendingAndroid.set(requestId,{resolve,reject,timer});
+      try {globalThis.BRVMAndroid.fetchMarketQuotes(requestId);}
+      catch(e) {clearTimeout(timer);pendingAndroid.delete(requestId);reject(e);}
+    });
+  }
   async function online(fetcher=fetch) {
     const own={method:'GET',credentials:'same-origin',referrerPolicy:'no-referrer',
       cache:'no-store',signal:AbortSignal.timeout(10000),redirect:'error'};
@@ -123,6 +152,13 @@
         {source:policy.source,official:policy.bulletinBasis===true,retrievedOn:F.today()});
     }
     if(policy?.enabled!==false) throw Error('Configuration de marché invalide.');
+    const viaAndroid=androidCSV();
+    if(viaAndroid!==null) {
+      const csv=await viaAndroid;
+      const quotes=parse(csv,{source:DIRECT_SOURCE+' · téléchargement Android',official:false,retrievedOn:F.today()});
+      if(Object.keys(quotes).length<5) throw Error('Source de cotations Android trop incomplète.');
+      return quotes;
+    }
     const remote={method:'GET',mode:'cors',credentials:'omit',cache:'no-store',
       referrerPolicy:'no-referrer',redirect:'error',signal:AbortSignal.timeout(12000)};
     let response;
@@ -157,5 +193,5 @@
     }
     return feed;
   }
-  return {parse,parseManual,online,feedEnabled,publicWatch,URL};
+  return {parse,parseManual,online,feedEnabled,publicWatch,receiveAndroidCsv,URL};
 });
