@@ -222,42 +222,76 @@ public final class MainActivity extends Activity {
     private void readMarketCsv(String id) {
         if (id == null || !id.matches("m[0-9]{1,10}")) return;
         if (!marketLoading.compareAndSet(false, true)) {
-            deliverMarketCsv(id, "", "BUSY");
+            deliverMarketCsv(id, "", "LECTURE_DEJA_EN_COURS");
             return;
         }
         new Thread(() -> {
             HttpURLConnection connection = null;
-            String encoded="", failure="";
+            String encoded = "", failure = "";
             try {
-                // This target must remain constant, HTTPS, and source-owned.
-                URL source=new URL("https://brvmdata.com/telechargements/actions-derniere-seance.csv");
-                connection=(HttpURLConnection)source.openConnection();
-                connection.setRequestMethod("GET");
-                connection.setInstanceFollowRedirects(false);
-                connection.setConnectTimeout(8000);
-                connection.setReadTimeout(8000);
-                connection.setUseCaches(false);
-                connection.setRequestProperty("Accept", "text/csv,text/plain;q=0.9,*/*;q=0.5");
-                connection.setRequestProperty("User-Agent", "BRVM-Family-Android-ReadOnly/1.0");
-                int status=connection.getResponseCode();
-                if(status!=200) throw new IOException("HTTP");
-                int expected=connection.getContentLength();
-                if(expected>2*1024*1024) throw new IOException("TOO_LARGE");
-                try(InputStream input=connection.getInputStream();
-                    ByteArrayOutputStream output=new ByteArrayOutputStream()) {
-                    byte[] buffer=new byte[8192];
-                    int count, total=0;
-                    while((count=input.read(buffer))>=0) {
-                        if(count==0) continue;
-                        total+=count;
-                        if(total>2*1024*1024) throw new IOException("TOO_LARGE");
-                        output.write(buffer,0,count);
+                // No user-supplied URL: user records never enter this code path.
+                URL source = new URL("https://brvmdata.com/telechargements/actions-derniere-seance.csv");
+                for (int redirects = 0; redirects <= 2; redirects++) {
+                    if (!"https".equalsIgnoreCase(source.getProtocol()) ||
+                        !("brvmdata.com".equalsIgnoreCase(source.getHost()) ||
+                          "www.brvmdata.com".equalsIgnoreCase(source.getHost())))
+                        throw new IOException("REDIRECTION_EXTERNE_REFUSEE");
+                    connection=(HttpURLConnection)source.openConnection();
+                    connection.setRequestMethod("GET");
+                    connection.setInstanceFollowRedirects(false);
+                    connection.setConnectTimeout(10000);
+                    connection.setReadTimeout(12000);
+                    connection.setUseCaches(false);
+                    connection.setRequestProperty("Accept","text/csv,text/plain;q=0.9,*/*;q=0.5");
+                    connection.setRequestProperty("User-Agent","BRVM-Family-Android-ReadOnly/1.0");
+                    int status=connection.getResponseCode();
+                    if (status==301 || status==302 || status==303 || status==307 || status==308) {
+                        final String location=connection.getHeaderField("Location");
+                        if (location==null || location.length()>512 || redirects==2)
+                            throw new IOException("REDIRECTION_INVALIDE");
+                        URL next=new URL(source,location);
+                        if (!"https".equalsIgnoreCase(next.getProtocol()) ||
+                            !("brvmdata.com".equalsIgnoreCase(next.getHost()) ||
+                              "www.brvmdata.com".equalsIgnoreCase(next.getHost())))
+                            throw new IOException("REDIRECTION_EXTERNE_REFUSEE");
+                        connection.disconnect();
+                        connection=null;
+                        source=next;
+                        continue;
                     }
-                    if(total==0) throw new IOException("EMPTY");
-                    encoded=Base64.encodeToString(output.toByteArray(),Base64.NO_WRAP);
+                    if(status!=200) throw new IOException("HTTP_"+status);
+                    int expected=connection.getContentLength();
+                    if(expected>2*1024*1024) throw new IOException("FICHIER_TROP_GROS");
+                    String contentType=connection.getContentType();
+                    if(contentType!=null && contentType.toLowerCase(java.util.Locale.ROOT).contains("text/html"))
+                        throw new IOException("PAGE_HTML_AU_LIEU_DU_CSV");
+                    try(InputStream input=connection.getInputStream();
+                        ByteArrayOutputStream output=new ByteArrayOutputStream()) {
+                        byte[] buffer=new byte[8192];
+                        int count,total=0;
+                        while((count=input.read(buffer))!=-1) {
+                            if(count==0) continue;
+                            total+=count;
+                            if(total>2*1024*1024) throw new IOException("FICHIER_TROP_GROS");
+                            output.write(buffer,0,count);
+                        }
+                        if(total==0) throw new IOException("FICHIER_VIDE");
+                        encoded=Base64.encodeToString(output.toByteArray(),Base64.NO_WRAP);
+                    }
+                    break;
                 }
-            } catch (IOException | RuntimeException e) {
-                failure="SOURCE_UNAVAILABLE";
+            } catch (java.net.UnknownHostException e) {
+                failure="DNS_INDISPONIBLE";
+            } catch (java.net.SocketTimeoutException e) {
+                failure="DELAI_CONNEXION_DEPASSE";
+            } catch (javax.net.ssl.SSLException e) {
+                failure="CONNEXION_HTTPS_REFUSEE";
+            } catch (IOException e) {
+                String message=e.getMessage();
+                failure=message!=null&&message.matches("[A-Z0-9_]{3,50}")?
+                    message:"SOURCE_INDISPONIBLE";
+            } catch (RuntimeException e) {
+                failure="ERREUR_RESEAU";
             } finally {
                 if(connection!=null) connection.disconnect();
                 marketLoading.set(false);
