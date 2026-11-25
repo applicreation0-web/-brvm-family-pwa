@@ -707,7 +707,7 @@
       ${pane('Sources de marché',`<p>L’actualisation automatique exige un flux autorisé pour cette installation. Le téléchargement manuel du fournisseur et l’import local restent disponibles.</p>
       <div class="actions"><a href="${Q.URL}" target="_blank" rel="noopener noreferrer">Télécharger le CSV BRVMData</a>${btn('refresh','Actualiser','','primary')}${btn('quote-import','Importer CSV ou JSON')}${btn('manual-quote','Saisir un cours / une VL')}</div>
       ${form('stale',field('days','Seuil en jours ouvrés estimés (week-ends exclus)',input('days',db.settings.staleDays,'number','required min="1" max="365" step="1"'))+
-      `<label class="check"><input type="checkbox" name="autoQuotes" ${db.settings.autoQuotes?'checked':''}> Actualiser automatiquement un flux autorisé pendant l’utilisation</label>`,
+      `<label class="check"><input type="checkbox" name="autoQuotes" ${db.settings.autoQuotes!==false?'checked':''}> Actualiser automatiquement un flux autorisé pendant l’utilisation</label>`,
       'Enregistrer les paramètres de marché')}
       <div class="actions"><a href="https://brvmdata.com/donnees/actions-derniere-seance/" rel="noopener noreferrer" target="_blank">Dernière séance BRVMData</a><a href="https://www.brvm.org/fr/bulletins-officiels-de-la-cote" rel="noopener noreferrer" target="_blank">Bulletins officiels BRVM</a></div>`)}</div>
       ${pane('Taux de change',form('fx',
@@ -747,23 +747,22 @@
     render(); $('#view').focus({preventScroll:true}); window.scrollTo(0,0);
     if(legacyOrders) {const section=$('.operations-orders');if(section){section.open=true;section.scrollIntoView({block:'start'});}}
   }
-  function marketUpdateHelp() {
+  function marketUpdateHelp(message='') {
     const last=Object.values(db.quotes).map(q=>q.date).sort().at(-1);
-    modal('Mettre à jour les cours BRVM',`
-      <p class="market-update-intro">Dernière séance enregistrée : <strong>${showDate(last)}</strong>.
-      Cette installation n'a actuellement aucun flux automatique autorisé :
-      appuyer sur « Actualiser » ne peut donc pas inventer une nouvelle clôture.</p>
-      <div class="market-update-options">
-        ${btn('quote-import','1. Importer un fichier de cours CSV / JSON','','primary')}
-        <a href="https://brvmdata.com/telechargements/actions-derniere-seance.csv" target="_blank" rel="noopener noreferrer">2. Télécharger les cours de dernière séance (BRVMData)</a>
-        <a href="https://www.brvm.org/fr/marche/bulletin-officiel-de-la-cote" target="_blank" rel="noopener noreferrer">3. Vérifier le Bulletin officiel BRVM</a>
-      </div>
-      <p class="quiet">Importez le CSV téléchargé, puis indiquez sa provenance. L'app conserve la date de séance,
-      la source et la qualité de chaque cotation et refuse les fichiers invalides ou les séances contradictoires.
-      Les titres, les quantités et les espèces ne changent pas lors d'une actualisation des cours.</p>`);
+    modal('Mettre à jour les cours BRVM',
+      '<p><strong>Cours locaux :</strong> '+esc(last?showDate(last):'Aucun cours enregistré')+'</p>'+
+      (message?'<p class="alert error">'+esc(message)+'</p>':'')+
+      '<p class="quiet">La PWA consulte directement, depuis ce navigateur, le CSV public de dernière séance de BRVMData, comme sur l’ancienne version Vercel. Une cotation peut être différée ou indisponible. Date et provenance restent visibles ; aucune valeur ni espèce n’est inventée.</p>'+
+      '<div class="market-update-options">'+
+        btn('quote-refresh-now','Actualiser directement les cours','','primary')+
+        btn('quote-import','Importer un CSV / JSON local')+
+        '<a href="https://brvmdata.com/telechargements/actions-derniere-seance.csv" target="_blank" rel="noopener noreferrer">Télécharger le CSV BRVMData</a>'+
+        '<a href="https://www.brvm.org/fr/cours-actions/officiel" target="_blank" rel="noopener noreferrer">Comparer avec la cotation officielle BRVM</a>'+
+      '</div>'+
+      '<p class="quiet">Si le fournisseur interdit la connexion navigateur (CORS), utilise le téléchargement du CSV puis « Importer ». Les cours du site officiel peuvent être plus récents que ceux de BRVMData. L’actualisation ne modifie jamais les espèces, les titres ou les écritures.</p>');
   }
   async function refresh(silent=false) {
-    if(refreshing) return;
+    if(refreshing||!db) return;
     refreshing=true;lastQuoteAttempt=Date.now();
     try {
       const quotes=await Q.online();
@@ -772,11 +771,16 @@
         try {
           const result=F.quoteUpdates(db,quotes);
           if(result.count) {await put(result.next); render();}
-          if(!silent) notify(result.count?result.count+' cotations enregistrées.':'Les dernières cotations sont déjà enregistrées.');
+          const latest=Object.values(quotes).map(q=>q.date).sort().at(-1);
+          if(!silent) notify(result.count
+            ?result.count+' cours enregistrés, séance du '+showDate(latest)+'. Vérifie les prix auprès de la BRVM.'
+            :'Dernière séance disponible chez le fournisseur : '+showDate(latest)+'. Aucune nouvelle cotation à enregistrer.');
         } finally {busy=false;}
       }
-    } catch(err) {if(!silent) notify('Les cours locaux sont conservés. Vérifiez la source ou importez un CSV depuis Données et sauvegarde.',true);}
-    finally {refreshing=false;}
+    } catch(err) {
+      if(!silent) marketUpdateHelp(err.message);
+      else console.warn('Mise à jour des cotations indisponible : '+err.message);
+    } finally {refreshing=false;}
   }
   const phraseFields=()=>field('pass','Phrase secrète (12 caractères ou plus)',input('pass','','password','required minlength="12" maxlength="1024" autocomplete="new-password"'))+
     field('again','Répéter la phrase',input('again','','password','required minlength="12" maxlength="1024" autocomplete="new-password"'));
@@ -878,7 +882,8 @@
     try {
       switch(action) {
         case 'close': close(); break;
-        case 'refresh': if(await Q.feedEnabled()) void refresh(); else marketUpdateHelp(); break;
+        case 'refresh': await refresh(); break;
+        case 'quote-refresh-now': close();await refresh();break;
         case 'import': $('#import').click();break;
         case 'monthly-backup': await exportMonthlyBackup();break;
         case 'legacy':
@@ -1341,7 +1346,7 @@
         case 'export-json':
           download(JSON.stringify(db,null,2),'BRVM-sauvegarde-privee.json');close();return;
         case 'unlock':
-          await load(await store.unlock(f.get('pass')));$('#flash').hidden=true;return;
+          await load(await store.unlock(f.get('pass')));$('#flash').hidden=true;void scheduleRefresh();return;
         case 'protect':
           if(f.get('pass')!==f.get('again')) throw Error('Les deux phrases diffèrent.');
           await load(await store.protect(f.get('pass'),record.revision));
@@ -1485,12 +1490,13 @@
         return;
       }
       await load(result.current);
+      void scheduleRefresh();
     }).catch(err=>{
       $('#view').textContent='Impossible d’ouvrir les données locales. '+err.message;
     });
   }
   function scheduleRefresh() {
-    if(db?.settings.autoQuotes && !document.hidden && navigator.onLine && !busy && !$('#modal').open &&
+    if(db?.settings.autoQuotes!==false && db && !document.hidden && navigator.onLine && !busy && !$('#modal').open &&
       Date.now()-lastQuoteAttempt>=15*60*1000) void refresh(true);
   }
   document.addEventListener('visibilitychange',scheduleRefresh);
