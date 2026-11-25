@@ -787,8 +787,10 @@
     let finishJob;
     marketJob=new Promise(resolve=>{finishJob=resolve;});
     refreshing=true;lastQuoteAttempt=Date.now();
+    const startingRevision=record.revision;
     try {
       const quotes=await Q.online();
+      if(!db||busy||$('#modal').open||record.revision!==startingRevision) return; // Do not race an import, unlock or other write.
       const session=Object.values(quotes).map(q=>q.date).sort().at(-1);
       const ordered=Object.entries(quotes).sort(([a],[b])=>a.localeCompare(b));
       let candidate=db,accepted=0,rejected=[];
@@ -805,7 +807,7 @@
       }
       if(ordered.length>=5 && rejected.length===ordered.length)
         throw Error('Aucun cours valide : '+rejected.slice(0,2).join(' ; '));
-      if(accepted) {await put(candidate);render();}
+      if(accepted) {busy=true;try {await put(candidate);render();} finally {busy=false;}}
       lastMarketSync={checkedAt:new Date().toLocaleString('fr-FR'),session,
         accepted,rejected:rejected.length};
       marketFailure=rejected.length?rejected.length+' cotations incompatibles : '+rejected.slice(0,2).join(' ; '):'';
@@ -1609,7 +1611,7 @@
     });
   }
   function scheduleRefresh() {
-    if(db?.settings.autoQuotes!==false && db && !document.hidden && (navigator.onLine||!!window.BRVMAndroid) && !busy && !$('#modal').open &&
+    if(db?.settings.autoQuotes!==false && db?.accounts.length && !document.hidden && (navigator.onLine||!!window.BRVMAndroid) && !busy && !$('#modal').open &&
       Date.now()-lastQuoteAttempt>=15*60*1000) void refresh(true);
   }
   document.addEventListener('visibilitychange',scheduleRefresh);
