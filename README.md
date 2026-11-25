@@ -1,3 +1,16 @@
+# V3.6.7 — Diagnostics précis des cours et correction du téléchargement Android
+
+La compilation et la validité de la signature ne prouvent pas qu'une cotation a été récupérée. Cette version traite l'échec d'actualisation signalé par l'utilisateur.
+
+- BRVMData publiait des cours au plus tard du 23 novembre alors que le bulletin officiel du 24 novembre était déjà accessible. La date de la source doit rester affichée, sans prétendre être le dernier cours.
+- Android : HTTP GET natif sur URL fixe brvmdata.com (aucune donnée privée), suivi d'au plus deux redirections HTTPS et uniquement dans le même domaine, timeout renforcé, contrôle du type et de la taille, refus des pages HTML.
+- Erreurs transparentes : HTTP_*, DNS_INDISPONIBLE, CONNEXION_HTTPS_REFUSEE, DELAI_CONNEXION_DEPASSE, SOURCE_INDISPONIBLE, etc., visibles dans le panneau Mettre à jour les cours.
+- Correction d'un blocage lorsque WebView indique hors connexion : le pont Android natif peut quand même actualiser. L'option utilisateur de désactivation automatique reste respectée.
+- Une cotation contradictoire ne bloque plus les autres actions valides : chaque cours est contrôlé et les refus sont visibles. Les espèces, les transactions et les positions ne changent pas du fait des cotations.
+- Date de séance, date du contrôle, nombre de cotations acceptées et rejetées visibles.
+- Web/PWA : l'origine BRVMData ne permet pas le chargement CORS ; il faut télécharger puis importer le CSV, jusqu'à activation d'un flux compatible et autorisé. Pas de promesse de cours temps réel.
+- Validation sur appareil utilisateur requise avant de qualifier l'actualisation comme résolue.
+
 # BRVM Family V3.6.6 — cotations automatiques Android natives + contrôle d'accès Web
 - Diagnostic : la Vercel `brvm-family-v3` utilisait l'URL directe `https://brvmdata.com/telechargements/actions-derniere-seance.csv` dans `quotes.js`, mais son `market/feed.json` était aussi désactivé. Le blocage actuel dans GitHub Pages provenait de l'importeur réseau interne désactivé ET de la CSP `connect-src 'self'`.
 - Rétablissement d'un téléchargement CSV **direct de chaque navigateur vers le fournisseur** ; seul `brvmdata.com` est autorisé par la CSP, via GET CORS anonyme. Aucune donnée personnelle, identité, position, JSON, clé ou solde n'est envoyée, mise sur GitHub ou sur un serveur intermédiaire. Si un flux titulaire de droits est ultérieurement configuré, il garde la priorité.
