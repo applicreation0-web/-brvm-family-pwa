@@ -615,6 +615,27 @@ test('Scénarios : le reliquat utilise chaque plafond, frais compris',()=>{
     assert.ok(s.spent<=s.cap);
   }
 });
+test('Cours limites ajustés : budgets, valorisation, projets, absence de mutation',()=>{
+  const d=fixture(), snapshot=JSON.stringify(d);
+  const prices=Object.fromEntries(E.symbols.map(s=>[s,d.quotes[s].price*2]));
+  const r=F.purchaseScenarios(d,{portfolioId:'p',accountId:'a',budget:8000,now:dates[1],limitPrices:prices});
+  assert.ok(r.scenarios[2].lines.length>0);
+  for(const sc of r.scenarios) {
+    assert.ok(sc.spent<=sc.cap);
+    assert.equal(sc.availableRemainder,Math.round((sc.cap-sc.spent)*100)/100);
+    for(const l of sc.lines) {
+      assert.equal(l.price,prices[l.symbol]);
+      assert.equal(l.referencePrice,d.quotes[l.symbol].price);
+      assert.equal(l.amount,l.qty*l.price);
+      assert.equal(l.quote.price,l.referencePrice);
+    }
+  }
+  const plan=F.createPlan(d,r.scenarios[2].plan);
+  for(const order of plan.orders) assert.equal(order.limit,prices[order.symbol]);
+  assert.equal(before(plan).cash,before(d).cash);
+  assert.equal(JSON.stringify(d),snapshot);
+  for(const value of [0,-5,2.5,Infinity]) assert.throws(()=>F.purchaseScenarios(d,{portfolioId:'p',accountId:'a',budget:8000,now:dates[1],limitPrices:{SNTS:value}}),/Cours limite invalide/);
+});
 test('Secours : GET anonyme, séance clôturée datée, alias TTLC, aucun effet sur les espèces',async()=>{
   const date=F.today(),symbols=['SNTS','ORAC','CIEC','TTLC','SMBC','NTLC','PALC',
     ...Array.from({length:35},(_,i)=>'ZZ'+String.fromCharCode(65+Math.floor(i/26))+String.fromCharCode(65+i%26))];
