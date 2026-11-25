@@ -42,6 +42,10 @@ def check(first, second):
     with sync_playwright() as harness:
         browser = harness.chromium.launch(executable_path=environ.get('BRVM_CHROMIUM_BIN'))
         context = browser.new_context()
+        market_url='https://brvmdata.com/telechargements/actions-derniere-seance.csv'
+        context.route(market_url,lambda route: route.fulfill(status=503,
+            headers={'access-control-allow-origin':'*','content-type':'text/plain'},
+            body='source de test momentanement indisponible'))
         page = context.new_page()
         visited = []
 
@@ -372,9 +376,21 @@ def check(first, second):
         page.get_by_role('dialog').get_by_role('button', name='Mettre à jour les cours').click()
         market=page.get_by_role('dialog')
         expect(market.get_by_role('heading', name='Mettre à jour les cours BRVM')).to_be_visible()
-        expect(market.get_by_text("aucun flux automatique autorisé", exact=False)).to_be_visible()
-        expect(market.get_by_role('button', name='1. Importer un fichier de cours CSV / JSON')).to_be_visible()
-        market.get_by_role('button', name='Fermer').click()
+        expect(market.get_by_text('temporairement indisponibles',exact=False)).to_be_visible()
+        expect(market.get_by_role('button', name='Actualiser directement les cours')).to_be_visible()
+        # Réponse distante simulée : source CSV autorisée, uniquement GET sans donnée de compte.
+        context.unroute(market_url)
+        market_csv='symbol,session_date,basis,close_xof,traded\n'+''.join(
+            f'{sym},2026-11-24,provisional,{2000+i*250},true\n'
+            for i,sym in enumerate(['SNTS','ORAC','CIEC','TOCI','SMBC','NTLC','PALC']))
+        context.route(market_url,lambda route: route.fulfill(status=200,
+            headers={'access-control-allow-origin':'*','content-type':'text/csv; charset=utf-8'},
+            body=market_csv))
+        market.get_by_role('button', name='Actualiser directement les cours').click()
+        expect(page.get_by_text('cours enregistrés',exact=False)).to_be_visible(timeout=10000)
+        context.unroute(market_url)
+        context.route(market_url,lambda route: route.fulfill(status=503,
+            headers={'access-control-allow-origin':'*'},body='test offline'))
         page.locator('#nav [data-page=dashboard]').press('Enter')
         page.get_by_role('button', name='Modifier mes données et mes actions').click()
         page.get_by_role('dialog').get_by_role('button', name='Sauvegardes').click()
@@ -525,8 +541,9 @@ def check(first, second):
         page.get_by_role('dialog').locator('[name=confirm]').fill('EFFACER')
         page.get_by_role('button', name='Effacer définitivement').click()
         expect(page.locator('.total')).to_have_count(0)
-        assert all(method=='GET' and url.startswith(first+'/') and '?' not in url and not body
-                   and 'browser-only' not in url for method,url,body in visited), 'Une transmission inattendue a été observée.'
+        assert all(method=='GET' and not body and ('browser-only' not in url) and
+                   ((url.startswith(first+'/') and '?' not in url) or url==market_url)
+                   for method,url,body in visited), 'Une transmission inattendue a été observée.'
         fresh.close()
         context.close()
         browser.close()
