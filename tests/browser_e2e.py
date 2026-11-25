@@ -388,7 +388,8 @@ def check(first, second):
             headers={'access-control-allow-origin':'*','content-type':'text/csv; charset=utf-8'},
             body=market_csv))
         market.get_by_role('button', name='Actualiser directement les cours').click()
-        expect(page.get_by_text('cours enregistrés',exact=False)).to_be_visible(timeout=10000)
+        expect(page.get_by_text('cotations actualisées',exact=False)).to_be_visible(timeout=10000)
+        expect(page.locator('#quote-date')).to_contain_text('24/11/2026')
         context.unroute(market_url)
         context.route(market_url,lambda route: route.fulfill(status=503,
             headers={'access-control-allow-origin':'*'},body='test offline'))
