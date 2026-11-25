@@ -546,6 +546,21 @@ def check(first, second):
                    for method,url,body in visited), 'Une transmission inattendue a été observée.'
         fresh.close()
         context.close()
+        # Non-blocking production diagnostic: verify CORS on the real provider.
+        # This browser has no account information and performs only a public GET.
+        probe_context=browser.new_context()
+        probe_page=probe_context.new_page()
+        probe_page.goto(first+'/')
+        verdict=probe_page.evaluate("""async () => {
+          try {
+            const r=await fetch('https://brvmdata.com/telechargements/actions-derniere-seance.csv',
+              {method:'GET',mode:'cors',credentials:'omit',cache:'no-store',
+               signal:AbortSignal.timeout(7000)});
+            return {ok:r.ok,status:r.status,bytes:Number(r.headers.get('content-length'))||null};
+          } catch(e) {return {ok:false,error:String(e).slice(0,190)};}
+        }""")
+        print('Diagnostic CORS direct BRVMData:',json.dumps(verdict,ensure_ascii=False))
+        probe_context.close()
         browser.close()
 
 
