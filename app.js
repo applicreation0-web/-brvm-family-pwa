@@ -285,8 +285,8 @@
       (!a.id?field('currency','Devise du compte',select('currency',F.currencies.map(c=>[c,c]),'XOF'))+
       field('openedOn','Date d’ouverture',input('openedOn',F.today(),'date','required max="'+F.today()+'"'))+
       field('cash','Espèces réellement détenues sur le relevé (0 si compte neuf)',money('cash',0)):'')+
-      `<div class="fields">${field('broker','Courtage estimé (%)',input('broker',(a.brokerRate??.01)*100,'number','min="0" max="1" step="0.01" required'))}
-      ${field('other','Autres frais estimés (%)',input('other',Math.round((a.otherRate??.006)*10000)/100,'number','min="0" max="10" step="0.01" required'))}</div>`+
+      `<div class="fields">${field('broker','Courtage estimé (%)',input('broker',Number(((a.brokerRate??.01)*100).toPrecision(14)),'number','min="0" step="any" required'))}
+      ${field('other','Autres frais estimés (%)',input('other',Number(((a.otherRate??.006)*100).toPrecision(14)),'number','min="0" step="any" required'))}</div>`+
       (a.id?`<label class="check"><input name="archived" type="checkbox" ${a.archived?'checked':''}> Archiver le compte</label>`:'')+
       '<p class="quiet">Ce formulaire crée uniquement le suivi local. Ouvrez d’abord le compte auprès de la SGI. Aucun achat, dépôt, frais ou mensualité fictive n’est créé ; la photographie initiale doit correspondre au relevé.</p>','Enregistrer le compte',a.id);
   }
@@ -470,7 +470,7 @@
       <div class="fields" data-types="BUY SELL">${field('price','Prix unitaire réel (FCFA)',money('price'))}${field('broker','Courtage réel (FCFA)',money('broker',0))}
       ${field('actualTotal','Total débité / crédité sur avis (FCFA)',money('actualTotal'))}</div>
       <div class="fields" data-types="BUY SELL DIVIDEND">${field('other','Autres frais (FCFA)',money('other',0))}${field('tax','Impôts / retenue (FCFA)',money('tax',0))}</div>
-      <div class="trade-preview" data-types="BUY SELL"><span>Montant calculé selon les frais saisis</span><strong data-trade-total>—</strong><small data-fee-hint>Renseignez le nombre d'actions et le cours.</small><small>Vérifiez chaque commission et le total réel sur l’avis. Un courtage supérieur à 1 % déclenche un avertissement, sans bloquer l’écriture.</small></div>
+      <div class="trade-preview" data-types="BUY SELL"><span>Montant calculé selon les frais saisis</span><strong data-trade-total>—</strong><small data-fee-hint>Renseignez le nombre d'actions et le cours.</small><small>Vérifiez chaque commission et le total réel sur l’avis. Aucun plafond de taux : saisissez les frais exacts du bordereau.</small></div>
       <div class="fields" data-types="DIVIDEND">${field('gross','Brut reçu (FCFA)',money('gross',preset.gross??''))}
       <label class="check"><input name="cashDistribution" type="checkbox"> FCP · distribution effectivement créditée hors VL</label>
       <p class="quiet">Contrôle par action facultatif : renseignez les trois champs pour vérifier la quantité éligible avant/après fractionnement.</p>
@@ -534,7 +534,7 @@
     const output=form.querySelector('[data-trade-total]');
     if(output) output.textContent=qty>0&&price>0?fc(net)+' · '+(type==='BUY'?'débit':'crédit'):'Renseignez quantité, cours et frais.';
     const a=findAccount(form.elements.accountId?.value), hint=form.querySelector('[data-fee-hint]');
-    if(hint) hint.textContent=qty>0&&price>0&&a?'Barème indicatif de ce compte : courtage '+pct(a.brokerRate)+' (~'+fc(Math.floor(gross*a.brokerRate*100)/100)+'), autres frais '+pct(a.otherRate)+' (~'+fc(Math.floor(gross*a.otherRate*100)/100)+'). Seul le bordereau fait foi.'+(broker>gross*.01+1e-8?' Attention : courtage réel '+(100*broker/gross).toLocaleString('fr-FR',{maximumFractionDigits:2})+' %, supérieur à 1 %. Vérifiez l’avis ; la saisie reste autorisée.':''):'Renseignez quantité et cours pour afficher le barème indicatif du compte.';
+    if(hint) hint.textContent=qty>0&&price>0&&a?'Barème indicatif de ce compte : courtage '+pct(a.brokerRate)+' (~'+fc(Math.floor(gross*a.brokerRate*100)/100)+'), autres frais '+pct(a.otherRate)+' (~'+fc(Math.floor(gross*a.otherRate*100)/100)+'). Seul le bordereau fait foi.'+' Courtage réel : '+(100*broker/gross).toLocaleString('fr-FR',{maximumFractionDigits:4})+' % du brut.':'Renseignez quantité et cours pour afficher le barème indicatif du compte.';
   }
   function eventsView() {
     const eventRows=db.events.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(e=>[
@@ -645,8 +645,8 @@
     summary.className='tx-confirm-preview';
     summary.setAttribute('role','status');
     const gross=Number(f.get('qty'))*Number(f.get('price')), broker=Number(f.get('broker'));
-    const above=['BUY','SELL'].includes(kind)&&gross>0&&broker>gross*.01+1e-8;
-    summary.innerHTML='<strong>Confirmer avant comptabilisation</strong>'+ (above?'<p class="quiet">Attention : courtage réel '+esc((100*broker/gross).toLocaleString('fr-FR',{maximumFractionDigits:2}))+' %, supérieur à 1 %. Confirmez le montant figurant sur l’avis SGI.</p>':'')+
+    const showRate=['BUY','SELL'].includes(kind)&&gross>0;
+    summary.innerHTML='<strong>Confirmer avant comptabilisation</strong>'+ (showRate?'<p class="quiet">Courtage réel : '+esc((100*broker/gross).toLocaleString('fr-FR',{maximumFractionDigits:4}))+' % du brut. Confirmez le montant figurant sur l’avis SGI.</p>':'')+
       '<p>Vérifiez les informations. Aucun compte n’est modifié avant la deuxième validation.</p>'+
       '<dl>'+detail.map(([name,value])=>'<div><dt>'+esc(name)+'</dt><dd>'+esc(String(value))+'</dd></div>').join('')+'</dl>';
     form.querySelector(':scope > .actions')?.before(summary);
