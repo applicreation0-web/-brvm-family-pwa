@@ -34,11 +34,16 @@ test('ERG01 : vendre sur avis, frais et plus-value réalisés, sans changement n
     brokerRef:'SELL-TOO-MANY',qty:11,price:300,broker:0,other:0,tax:0,actualTotal:3300}),/Vente supérieure/);
 });
 
-test('ERG02 : plafond courtage 1 %, total d’avis strict, vente sans double comptage',()=>{
+test('ERG02 : courtage réel supérieur à 1 %, total d’avis strict, vente sans double comptage',()=>{
   const d=fixture();
   const base={type:'SELL',accountId:'account',symbol:'SNTS',date:F.today(),brokerRef:'SELL-002',
     qty:2,price:300,broker:7,other:0,tax:0,actualTotal:593};
-  assert.throws(()=>F.record(d,base),/Courtage supérieur/);
+  const above=F.record(d,base);
+  assert.equal(account(above).cash,10593);
+  assert.equal(account(above).feesPaid,7);
+  assert.equal(account(above).positions.SNTS.qty,8);
+  assert.equal(d.transactions.length,0);
+  assert.throws(()=>F.record(d,{...base,actualTotal:594}),/Montant du justificatif/);
   assert.throws(()=>F.record(d,{...base,broker:5,actualTotal:600}),/Montant du justificatif/);
   const good=F.record(d,{...base,broker:5,actualTotal:595});
   assert.equal(account(good).cash,10595);
