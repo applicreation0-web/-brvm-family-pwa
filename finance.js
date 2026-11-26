@@ -163,7 +163,7 @@
       fail(currencies.includes(a.currency) && typeof a.label==='string' && a.label.length<=200, 'Devise ou compte invalide.');
       fail(!a.openedOn||date(a.openedOn)&&a.openedOn<=current,'Date d’ouverture invalide.');
       fail(cent(a.cash)>=cent(a.reserved), 'Réserve supérieure au cash initial.');
-      fail(num(a.brokerRate) && a.brokerRate<=.01 && num(a.otherRate) && a.otherRate<=.10, 'Taux de frais invalide.');
+      fail(num(a.brokerRate) && num(a.otherRate) && Number.isFinite(a.brokerRate+a.otherRate), 'Taux de frais invalide : saisir un nombre positif ou nul.');
       cent(a.monthly);
     }
     const openingPositions=new Set();
@@ -265,7 +265,7 @@
       fail(cent(t.price)>0,'Cours d’exécution positif obligatoire.');
       const a=tradeAmounts(t);
       if(!t.legacy) {
-        // A confirmed broker statement is authoritative; a fee above 1% is a UI warning, not a ledger rejection.
+        // A confirmed broker statement is authoritative; no percentage ceiling applies to actual fees.
         fail(cent(t.actualTotal)===a.total,'Montant du justificatif différent du montant calculé.');
       }
       fail(a.total>=0,'Montant net négatif.');
