@@ -91,6 +91,33 @@ test('Courtage réel supérieur à 1 % : achat, vente, réimport et contrôles i
   assert.throws(()=>tx(d,'BUY',{...buy,broker:10000,actualTotal:10605}),/insuffisant/);
   assert.throws(()=>tx(d,'SELL',{...buy,broker:1000,actualTotal:0}),/justificatif|négatif/);
 });
+test('Barèmes SGI sans plafond arbitraire : simulation, ordre, import, taux invalides',()=>{
+  const d=fixture();d.accounts[0].brokerRate=.0375;d.accounts[0].otherRate=.125;
+  const snapshot=JSON.stringify(d);
+  const r=F.purchaseScenarios(d,{portfolioId:'p',accountId:'a',budget:8000,now:dates[1]});
+  assert.ok(r.scenarios[2].lines.length>0);
+  for(const sc of r.scenarios) {
+    assert.ok(sc.spent<=sc.cap);
+    for(const l of sc.lines) {
+      assert.equal(l.broker,Math.floor(l.amount*.0375*100+1e-7)/100);
+      assert.equal(l.other,Math.floor(l.amount*.125*100+1e-7)/100);
+    }
+  }
+  const created=F.createPlan(d,r.scenarios[2].plan);
+  assert.ok(created.orders.every(o=>Math.abs(o.estimateRate-.1625)<1e-10));
+  assert.equal(JSON.stringify(d),snapshot);
+  assert.deepEqual(F.migrate(JSON.parse(snapshot)),d);
+  for(const field of ['brokerRate','otherRate']) {
+    for(const bad of [-.01,Infinity,NaN]) {
+      const copy=fixture();copy.accounts[0][field]=bad;
+      assert.throws(()=>F.calculate(copy),/Taux de frais invalide/);
+    }
+  }
+  const high=fixture();high.accounts[0].brokerRate=2;high.accounts[0].otherRate=3;
+  assert.doesNotThrow(()=>F.calculate(high));
+  const limited=F.purchaseScenarios(high,{portfolioId:'p',accountId:'a',budget:8000,now:dates[1]});
+  assert.ok(limited.scenarios.every(sc=>sc.spent<=sc.cap));
+});
 test('FIN03 FIN04 FIN10 FIN11 : projet, réserve, exécution partielle, annulation et rapprochement',()=>{
   const d=fixture();
   const p=F.createPlan(d,{portfolioId:'p',mode:'manuel',funding:{a:500000},lines:[{accountId:'a',symbol:'SNTS',qty:4,price:300,estimateRate:.016}]});
