@@ -418,8 +418,13 @@ def check(first, second):
         expect(market.get_by_role('button', name='Réessayer maintenant')).to_be_visible()
         # Réponse distante simulée : source CSV autorisée, uniquement GET sans donnée de compte.
         context.unroute(market_url)
+        from datetime import date, timedelta
+        local_session=date.fromisoformat(page.evaluate('BRVM.today()'))
+        provider_session=local_session-timedelta(days=1)
+        while provider_session.weekday()>=5:
+            provider_session-=timedelta(days=1)
         market_csv='symbol,session_date,basis,close_xof,traded\n'+''.join(
-            f'{sym},2026-11-24,provisional,{2000+i*250},true\n'
+            f'{sym},{provider_session.isoformat()},provisional,{2000+i*250},true\n'
             for i,sym in enumerate(['SNTS','ORAC','CIEC','TOCI','SMBC','NTLC','PALC']))
         context.route(market_url,lambda route: route.fulfill(status=200,
             headers={'access-control-allow-origin':'*','content-type':'text/csv; charset=utf-8'},
@@ -427,8 +432,8 @@ def check(first, second):
         market.get_by_role('button', name='Réessayer maintenant').click()
         expect(page.get_by_text('cotations actualisées',exact=False)).to_be_visible(timeout=10000)
         # Un cours local postérieur au fournisseur doit rester prioritaire.
-        expect(page.locator('#quote-date')).to_contain_text('25/11/2026')
-        expect(page.get_by_text('séance fournisseur du 24/11/2026',exact=False)).to_be_visible()
+        expect(page.locator('#quote-date')).to_contain_text(local_session.strftime('%d/%m/%Y'))
+        expect(page.get_by_text('séance fournisseur du '+provider_session.strftime('%d/%m/%Y'),exact=False)).to_be_visible()
         context.unroute(market_url)
         context.route(market_url,lambda route: route.fulfill(status=503,
             headers={'access-control-allow-origin':'*'},body='test offline'))
