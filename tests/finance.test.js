@@ -63,7 +63,7 @@ test('FIN02 FIN05–09 : achat, PRU, frais détaillés, montant rapproché et ve
   assert.equal(before(updated).cash,9390);
   assert.equal(before(updated).positions.SNTS.cost,2610);
   assert.equal(before(updated,'b').cash,5000);
-  for(const props of [{...buy,broker:7,actualTotal:612},{...buy,actualTotal:611},{...buy,qty:99,actualTotal:29710}])
+  for(const props of [{...buy,broker:7,actualTotal:611},{...buy,actualTotal:611},{...buy,qty:99,actualTotal:29710}])
     assert.throws(()=>tx(d,'BUY',props),/Courtage|justificatif|insuffisant/);
   assert.throws(()=>tx(updated,'BUY',buy),/déjà/);
   const sold=tx(updated,'SELL',{...buy,date:dates[2],qty:4,price:400,broker:10,other:7,tax:3,actualTotal:1580});
@@ -73,6 +73,23 @@ test('FIN02 FIN05–09 : achat, PRU, frais détaillés, montant rapproché et ve
   assert.equal(before(sold).feesPaid,26);
   assert.equal(before(sold).taxes,4);
   assert.throws(()=>tx(updated,'SELL',{...buy,qty:50,actualTotal:14990}),/supérieure/);
+});
+test('Courtage réel supérieur à 1 % : achat, vente, réimport et contrôles inchangés',()=>{
+  const d=fixture(), original=JSON.stringify(d);
+  const purchased=tx(d,'BUY',{...buy,broker:25,actualTotal:630});
+  assert.equal(before(purchased).cash,9370);
+  assert.equal(before(purchased).positions.SNTS.cost,2630);
+  assert.equal(purchased.transactions[0].broker,25);
+  const sold=tx(purchased,'SELL',{...buy,qty:2,price:400,broker:32,other:5,tax:3,actualTotal:760,date:dates[2]});
+  assert.equal(before(sold).cash,10130);
+  assert.equal(before(sold).positions.SNTS.qty,10);
+  assert.equal(sold.transactions[1].broker,32);
+  assert.deepEqual(F.migrate(JSON.parse(JSON.stringify(sold))),sold);
+  assert.equal(JSON.stringify(d),original);
+  assert.throws(()=>tx(d,'BUY',{...buy,broker:25,actualTotal:629}),/justificatif/);
+  assert.throws(()=>tx(d,'BUY',{...buy,broker:-1,actualTotal:604}),/Montant XOF invalide/);
+  assert.throws(()=>tx(d,'BUY',{...buy,broker:10000,actualTotal:10605}),/insuffisant/);
+  assert.throws(()=>tx(d,'SELL',{...buy,broker:1000,actualTotal:0}),/justificatif|négatif/);
 });
 test('FIN03 FIN04 FIN10 FIN11 : projet, réserve, exécution partielle, annulation et rapprochement',()=>{
   const d=fixture();
