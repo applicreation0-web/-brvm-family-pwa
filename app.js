@@ -320,7 +320,7 @@
       <p class="quiet">Proposition indicative, sans ordre transmis. Elle utilise seulement les espèces déjà disponibles et les frais estimés de la SGI ; les frais fixes ou taxes non configurés peuvent différer de l’avis réel.</p>
       <div class="invest-layout">${pane('Achat ponctuel · rattrapage des cibles',act.length?form('invest',`
       <fieldset><legend>1. Espèces disponibles par compte</legend>
-      ${act.map(a=>`<div class="investment-account"><label class="check"><input name="accounts" type="checkbox" value="${attr(a.id)}" ${inp.accountIds?inp.accountIds.includes(a.id)?'checked':'':'checked'}>${esc(accName(a.id))}</label><small>Espèces mobilisables : ${fc(a.available)} · courtage maximal : 1 % (taux du compte ${pct(a.brokerRate)})</small></div>`).join('')}
+      ${act.map(a=>`<div class="investment-account"><label class="check"><input name="accounts" type="checkbox" value="${attr(a.id)}" ${inp.accountIds?inp.accountIds.includes(a.id)?'checked':'':'checked'}>${esc(accName(a.id))}</label><small>Espèces mobilisables : ${fc(a.available)} · courtage estimé : ${pct(a.brokerRate)}</small></div>`).join('')}
       </fieldset>
       <fieldset><legend>2. Plafond ponctuel</legend>
       ${field('budget','Budget maximum à dépenser (FCFA)',integer('budget',inp.budget??available))}
@@ -334,7 +334,7 @@
         <summary>Projets d’ordres et suivi (${db.orders.length})</summary>
         ${ordersView()}
       </details>
-      <p class="quiet">Les avis confirmés font foi : courtage (plafond 1 %), autres frais et impôts sur les achats/ventes. Les frais bancaires ou de tenue de compte non inclus dans un avis s'enregistrent séparément.</p>`;
+      <p class="quiet">Les avis confirmés font foi : courtage réel, autres frais et impôts sur les achats/ventes. Les frais bancaires ou de tenue de compte non inclus dans un avis s'enregistrent séparément.</p>`;
   }
   // The guided buy flow is a calculator, not a trade execution or brokerage connection.
   async function purchaseGuide(preselected, prefill={}) {
@@ -470,7 +470,7 @@
       <div class="fields" data-types="BUY SELL">${field('price','Prix unitaire réel (FCFA)',money('price'))}${field('broker','Courtage réel (FCFA)',money('broker',0))}
       ${field('actualTotal','Total débité / crédité sur avis (FCFA)',money('actualTotal'))}</div>
       <div class="fields" data-types="BUY SELL DIVIDEND">${field('other','Autres frais (FCFA)',money('other',0))}${field('tax','Impôts / retenue (FCFA)',money('tax',0))}</div>
-      <div class="trade-preview" data-types="BUY SELL"><span>Montant calculé selon les frais saisis</span><strong data-trade-total>—</strong><small data-fee-hint>Renseignez le nombre d'actions et le cours.</small><small>Vérifiez chaque commission et le total réel sur l’avis. Courtage plafonné à 1 % du brut.</small></div>
+      <div class="trade-preview" data-types="BUY SELL"><span>Montant calculé selon les frais saisis</span><strong data-trade-total>—</strong><small data-fee-hint>Renseignez le nombre d'actions et le cours.</small><small>Vérifiez chaque commission et le total réel sur l’avis. Un courtage supérieur à 1 % déclenche un avertissement, sans bloquer l’écriture.</small></div>
       <div class="fields" data-types="DIVIDEND">${field('gross','Brut reçu (FCFA)',money('gross',preset.gross??''))}
       <label class="check"><input name="cashDistribution" type="checkbox"> FCP · distribution effectivement créditée hors VL</label>
       <p class="quiet">Contrôle par action facultatif : renseignez les trois champs pour vérifier la quantité éligible avant/après fractionnement.</p>
@@ -534,7 +534,7 @@
     const output=form.querySelector('[data-trade-total]');
     if(output) output.textContent=qty>0&&price>0?fc(net)+' · '+(type==='BUY'?'débit':'crédit'):'Renseignez quantité, cours et frais.';
     const a=findAccount(form.elements.accountId?.value), hint=form.querySelector('[data-fee-hint]');
-    if(hint) hint.textContent=qty>0&&price>0&&a?'Barème indicatif de ce compte : courtage '+pct(a.brokerRate)+' (~'+fc(Math.floor(gross*a.brokerRate*100)/100)+'), autres frais '+pct(a.otherRate)+' (~'+fc(Math.floor(gross*a.otherRate*100)/100)+'). Seul le bordereau fait foi.':'Renseignez quantité et cours pour afficher le barème indicatif du compte.';
+    if(hint) hint.textContent=qty>0&&price>0&&a?'Barème indicatif de ce compte : courtage '+pct(a.brokerRate)+' (~'+fc(Math.floor(gross*a.brokerRate*100)/100)+'), autres frais '+pct(a.otherRate)+' (~'+fc(Math.floor(gross*a.otherRate*100)/100)+'). Seul le bordereau fait foi.'+(broker>gross*.01+1e-8?' Attention : courtage réel '+(100*broker/gross).toLocaleString('fr-FR',{maximumFractionDigits:2})+' %, supérieur à 1 %. Vérifiez l’avis ; la saisie reste autorisée.':''):'Renseignez quantité et cours pour afficher le barème indicatif du compte.';
   }
   function eventsView() {
     const eventRows=db.events.slice().sort((a,b)=>a.date.localeCompare(b.date)).map(e=>[
@@ -644,7 +644,9 @@
     const summary=document.createElement('section');
     summary.className='tx-confirm-preview';
     summary.setAttribute('role','status');
-    summary.innerHTML='<strong>Confirmer avant comptabilisation</strong>'+
+    const gross=Number(f.get('qty'))*Number(f.get('price')), broker=Number(f.get('broker'));
+    const above=['BUY','SELL'].includes(kind)&&gross>0&&broker>gross*.01+1e-8;
+    summary.innerHTML='<strong>Confirmer avant comptabilisation</strong>'+ (above?'<p class="quiet">Attention : courtage réel '+esc((100*broker/gross).toLocaleString('fr-FR',{maximumFractionDigits:2}))+' %, supérieur à 1 %. Confirmez le montant figurant sur l’avis SGI.</p>':'')+
       '<p>Vérifiez les informations. Aucun compte n’est modifié avant la deuxième validation.</p>'+
       '<dl>'+detail.map(([name,value])=>'<div><dt>'+esc(name)+'</dt><dd>'+esc(String(value))+'</dd></div>').join('')+'</dl>';
     form.querySelector(':scope > .actions')?.before(summary);
