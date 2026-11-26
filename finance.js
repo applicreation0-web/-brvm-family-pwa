@@ -265,7 +265,7 @@
       fail(cent(t.price)>0,'Cours d’exécution positif obligatoire.');
       const a=tradeAmounts(t);
       if(!t.legacy) {
-        fail(cent(t.broker)<=Math.floor(a.gross/100), 'Courtage supérieur au plafond de 1 %.');
+        // A confirmed broker statement is authoritative; a fee above 1% is a UI warning, not a ledger rejection.
         fail(cent(t.actualTotal)===a.total,'Montant du justificatif différent du montant calculé.');
       }
       fail(a.total>=0,'Montant net négatif.');
